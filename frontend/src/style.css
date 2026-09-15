@@ -1,0 +1,128 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Basic Theme Colors */
+  --color-black-base: #000000;
+  --color-black-base-80: #000000cc;
+  --color-white-base: #ffffff;
+  
+  /* Grays (Backgrounds, Texts, Borders) */
+  --color-background: #09090b; /* Zinc 950 */
+  --color-background-20: #09090b33;
+  --color-surface: #18181b; /* Zinc 900 */
+  --color-surface-50: #18181b80;
+  --color-surface-80: #18181bcc;
+  --color-surface-elevated: #27272a; /* Zinc 800 */
+
+  --color-text-primary: #ffffff;
+  --color-text-secondary: #d1d5db;
+  --color-text-muted: #a1a1aa; /* Zinc 400 */
+  --color-text-disabled: #71717a; /* Zinc 500 */
+  --color-text-inverse: #000000;
+
+  /* Status Identifiers (Syncing, Connected) */
+  --color-status: #a855f7; /* Purple-ish, based on screenshot preference */
+  --color-status-75: #a855f7bf; 
+  
+  --color-success: #22c55e;
+  --color-success-75: #22c55ebf;
+
+  --color-border-dark: #09090b;
+  --color-border-subtle: #18181b;
+  --color-border-subtle-50: #18181b80;
+  --color-border-strong: #27272a;
+  --color-border-highlight: #3f3f46; /* Zinc 700 */
+
+  /* Primary Accent (Green) */
+  --color-accent-light: #9969e6;
+  --color-accent: #8533d1;
+  --color-accent-dark: #5a1575;
+  --color-accent-dark-20: #35145c;
+  --color-accent-dark-40: #290e47;
+  --color-accent-dark-50: #290e49;
+
+  /* Danger Accent (Red) */
+  --color-danger-light: #f87171;
+  --color-danger: #ef4444;
+  --color-danger-30: #ef44444d;
+  --color-danger-dark: #dc2626;
+  --color-danger-darkest-20: #7f1d1d33;
+
+  /* Info Accent (Blue) */
+  --color-info-light: #60a5fa;
+  --color-info-20: #3b82f633;
+  --color-info-30: #3b82f64d;
+  --color-info: #3b82f6;
+  --color-info-dark-20: #2563eb33;
+  --color-info-dark-40: #2563eb66;
+  --color-info-dark-50: #2563eb80;
+  --color-info-dark: #2563eb;
+
+  /* Warning Accent (Yellow) */
+  --color-warning-20: #eab30833;
+  --color-warning-30: #eab3084d;
+  --color-warning: #eab308;
+  --color-warning-dark-20: #ca8a0433;
+  --color-warning-dark-40: #ca8a0466;
+  --color-warning-dark-50: #ca8a0480;
+  --color-warning-dark: #ca8a04;
+
+  /* ========================= */
+  /* Procedural Wood Shelf 3D  */
+  /* ========================= */
+  --wood-wall-base: #1a1514;
+  --wood-wall-stripe1: #1f1412;
+  --wood-wall-stripe2: #140d0b;
+  --wood-shelf-top: #5c3a21;
+  --wood-shelf-edge-light: #4a2c20;
+  --wood-shelf-edge-dark: #2e1a12;
+  --wood-shadow: rgba(0,0,0,0.8);
+  --wood-border: #3e2723;
+
+  /* Brass Label Plate */
+  --brass-grad-top: #f3e5ab;
+  --brass-grad-bottom: #c2a45a;
+  --brass-text: #3e2723;
+  --brass-border: #8b733d;
+  --brass-screw: #5c4a21;
+}
+
+.wood-shelf-bg {
+    background-color: var(--wood-wall-base);
+    background-image: 
+        /* Drop shadow under the shelf */
+        linear-gradient(to bottom, transparent 260px, var(--wood-shadow) 260px, transparent 280px),
+        /* Front edge of shelf */
+        linear-gradient(to bottom, transparent 240px, var(--wood-shelf-edge-light) 240px, var(--wood-shelf-edge-dark) 260px, transparent 260px),
+        /* Top surface of shelf */
+        linear-gradient(to bottom, transparent 225px, var(--wood-shelf-top) 225px, var(--wood-shelf-edge-light) 240px, transparent 240px),
+        /* Vertical wall wood paneling */
+        repeating-linear-gradient(to right, var(--wood-wall-stripe1) 0px, var(--wood-wall-stripe1) 98px, var(--wood-wall-stripe2) 100px);
+    background-size: 100% 280px, 100% 280px, 100% 280px, 100px 100%;
+}.slider-thumb-accent::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--color-white-base);
+    cursor: pointer;
+    transition: transform 0.1s;
+}
+.slider-thumb-accent::-webkit-slider-thumb:hover {
+    transform: scale(1.2);
+}
+.slider-thumb-accent::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--color-white-base);
+    cursor: pointer;
+    border: none;
+    transition: transform 0.1s;
+}
+.slider-thumb-accent::-moz-range-thumb:hover {
+    transform: scale(1.2);
+}

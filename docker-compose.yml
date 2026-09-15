@@ -1,0 +1,17 @@
+services:
+  tidalarius:
+    build: .
+    container_name: tidalarius
+    restart: unless-stopped
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Berlin
+      # - TIDARR_URL=http://tidarr:8484
+      # - TIDARR_API_KEY=your_tidarr_api_key
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data/config:/config
+      - ./data/db:/data
+      - ./data/music:/music

@@ -1,0 +1,19 @@
+node_modules/
+__pycache__/
+data/
+frontend/dist/
+.env
+*.pyc
+.DS_Store
+
+# User exclusions
+script.py
+script2.py
+script3.py
+script4.py
+tidal-project.md
+rrebuild
+docker-compose-linux.yml
+scratch/script_replace.py
+rebuild
+*.txt
