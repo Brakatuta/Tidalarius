@@ -11,9 +11,10 @@ script.py
 script2.py
 script3.py
 script4.py
+script_replace.py
 tidal-project.md
 rebuild
 docker-compose-linux.yml
 remote_server_current_media_download_docker.txt
-rebuild
+scratch/
 *.txt
