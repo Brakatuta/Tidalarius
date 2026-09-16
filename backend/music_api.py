@@ -54,7 +54,7 @@ def get_playlist_details(playlist_id: str, db: Session = Depends(get_db)):
         
     try:
         p = global_session.playlist(playlist_id)
-        tracks = list(p.tracks())
+        tracks = list(p.tracks(limit=10000))
         playlist_name = p.name
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch playlist from Tidal: {str(e)}")

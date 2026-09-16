@@ -164,7 +164,7 @@ def delete_single_track(playlist_id: str, track_id: int):
         raise HTTPException(status_code=404, detail='Playlist not found')
     
     target_track = None
-    for track in playlist.tracks():
+    for track in playlist.tracks(limit=10000):
         if track.id == track_id:
             target_track = track
             break
