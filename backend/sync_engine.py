@@ -130,6 +130,21 @@ def download_track_via_tidalapi(track, quality_str, base_path):
     quality_str: one of HI_RES_LOSSLESS, LOSSLESS, HIGH, LOW
     """
     try:
+        # Build the file path prefix to check if it already exists BEFORE hitting the API
+        artist_name = sanitize_filename(track.artist.name if track.artist else "Unknown Artist")
+        album_name = sanitize_filename(track.album.name if track.album else "Unknown Album")
+        track_title = sanitize_filename(track.name)
+        track_num = track.track_num or 1
+        
+        track_dir = Path(base_path) / artist_name / album_name
+        track_dir.mkdir(parents=True, exist_ok=True)
+        file_prefix = f"{track_num:02d} - {track_title}"
+        
+        for ext in [".flac", ".m4a"]:
+            check_path = track_dir / f"{file_prefix}{ext}"
+            if check_path.exists() and check_path.stat().st_size > 100_000:
+                return True, f"Already exists ({check_path.stat().st_size} bytes)", str(check_path)
+
         # Map our quality strings to tidalapi Quality enum
         import tidalapi
         quality_map = {
@@ -141,6 +156,10 @@ def download_track_via_tidalapi(track, quality_str, base_path):
         quality = quality_map.get(quality_str)
         if not quality:
             quality = tidalapi.Quality.high_lossless
+        
+        # Add a small delay to avoid rate limiting
+        import time
+        time.sleep(0.5)
         
         # Temporarily set quality on the session so get_stream() uses it
         old_quality = global_session.config.quality
