@@ -41,6 +41,33 @@ def emit_sync_event(event_type, playlist_id, **kwargs):
 def sanitize_filename(name):
     return re.sub(r'[\\/*?:"<>|]', "", name)
 
+def prune_sync_reports(directory: str, max_keep: int = 3):
+    """Keeps only the latest max_keep sync report log files in the directory."""
+    try:
+        if not os.path.exists(directory):
+            return
+        log_files = [f for f in os.listdir(directory) if f.startswith('sync_report_') and f.endswith('.log')]
+        if len(log_files) > max_keep:
+            sorted_logs = sorted(log_files, reverse=True)
+            for old_log in sorted_logs[max_keep:]:
+                try:
+                    os.remove(os.path.join(directory, old_log))
+                except Exception as ex:
+                    print(f"Failed to remove old sync report {old_log}: {ex}")
+    except Exception as e:
+        print(f"Error pruning sync reports in {directory}: {e}")
+
+def prune_all_sync_reports(music_dir: str = MUSIC_DIR, max_keep: int = 3):
+    """Prunes sync reports across all playlist directories."""
+    try:
+        if not os.path.exists(music_dir):
+            return
+        for entry in os.scandir(music_dir):
+            if entry.is_dir():
+                prune_sync_reports(entry.path, max_keep=max_keep)
+    except Exception as e:
+        print(f"Error pruning all sync reports: {e}")
+
 def download_cover(track):
     """Download album cover art, returns bytes or None."""
     try:
@@ -350,24 +377,44 @@ def process_playlist_sync(playlist_id, qualities, track_id=None):
         
         emit_sync_event("sync_started", playlist_id)
         
-        print("[WORKER] Fetching playlist from global_session", flush=True)
-        playlist = global_session.playlist(playlist_id)
-        print(f"[WORKER] Fetched playlist: {playlist.name}", flush=True)
+        print("[WORKER] Fetching item from global_session", flush=True)
+        item_type = getattr(db_config, 'item_type', 'playlist')
         
         tracks = []
         seen_ids = set()
-        offset = 0
-        limit = 1000
-        while True:
-            batch = playlist.tracks(limit=limit, offset=offset)
-            if not batch: break
-            for t in batch:
+        
+        if item_type == "album":
+            album = global_session.album(playlist_id)
+            playlist = album
+            print(f"[WORKER] Fetched album: {album.name}", flush=True)
+            for t in album.tracks():
                 if t.id not in seen_ids:
                     tracks.append(t)
                     seen_ids.add(t.id)
-            offset += len(batch)
-            if len(batch) < limit: break
-        
+            item_name = album.name
+        elif item_type == "track":
+            track = global_session.track(playlist_id)
+            playlist = track
+            print(f"[WORKER] Fetched track: {track.name}", flush=True)
+            tracks.append(track)
+            item_name = track.name
+        else:
+            playlist = global_session.playlist(playlist_id)
+            print(f"[WORKER] Fetched playlist: {playlist.name}", flush=True)
+            offset = 0
+            limit = 1000
+            while True:
+                batch = playlist.tracks(limit=limit, offset=offset)
+                if not batch: break
+                for t in batch:
+                    if t.id not in seen_ids:
+                        tracks.append(t)
+                        seen_ids.add(t.id)
+                offset += len(batch)
+                if len(batch) < limit: break
+            item_name = playlist.name
+            
+        print(f"[WORKER] Found {len(tracks)} tracks total", flush=True)
         # Filter for single track sync if specified
         if track_id is not None:
             tracks = [t for t in tracks if t.id == track_id]
@@ -470,6 +517,7 @@ def process_playlist_sync(playlist_id, qualities, track_id=None):
             f.write(f"\nFailed ({len(report['failed'])}):\n")
             for t in report["failed"]: f.write(f" - {t['track']} (Reason: {t['reason']})\n")
             
+        prune_sync_reports(playlist_dir, max_keep=3)
         emit_sync_event("sync_finished", playlist_id, report_url=f"/api/sync/report?path={report_path}")
     except Exception as e:
         print(f"Sync failed for {playlist_id}: {e}")
@@ -484,6 +532,7 @@ def process_playlist_sync(playlist_id, qualities, track_id=None):
 
 def sync_worker():
     print("[WORKER] Thread started, waiting for jobs", flush=True)
+    prune_all_sync_reports(MUSIC_DIR, max_keep=3)
     while True:
         job = sync_queue.get()
         if job is None: break

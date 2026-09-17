@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, computed, watch } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { playerStore } from '../playerStore.js'
 import { syncStore } from '../syncStore.js'
 
@@ -7,6 +7,10 @@ const props = defineProps({
     playlist: {
         type: Object,
         required: true
+    },
+    isDiscover: {
+        type: Boolean,
+        default: false
     }
 })
 
@@ -25,17 +29,11 @@ const isDeleting = ref(false)
 const qualityOptions = ['LOW', 'HIGH', 'LOSSLESS', 'HI_RES_LOSSLESS']
 const streamQuality = ref(localStorage.getItem('streamQuality') || 'HIGH')
 
-watch(streamQuality, (newQ) => {
-    localStorage.setItem('streamQuality', newQ)
-    if (playlistData.value && playlistData.value.tracks) {
-        playlistData.value.tracks.forEach(t => {
-            if (!t.is_downloaded && t.stream_url && t.stream_url.includes('/api/music/stream/')) {
-                const baseUrl = t.stream_url.split('?')[0]
-                t.stream_url = `${baseUrl}?quality=${newQ}`
-            }
-        })
-    }
-})
+const onQualityChanged = () => {
+    streamQuality.value = localStorage.getItem('streamQuality') || 'HIGH'
+    applyStreamQuality()
+}
+
 const commonSchedules = [
   { label: 'Never (Manual Only)', value: null },
   { label: 'Every hour', value: '0 * * * *' },
@@ -45,6 +43,58 @@ const commonSchedules = [
   { label: 'Daily at 3 AM', value: '0 3 * * *' },
   { label: 'Weekly', value: '0 0 * * 0' },
 ]
+
+const isInLibrary = ref(false)
+
+const checkLibrary = async () => {
+    try {
+        const res = await fetch('/api/playlists/')
+        if (res.ok) {
+            const list = await res.json()
+            const targetId = String(props.playlist.tidal_id || props.playlist.id || '')
+            isInLibrary.value = list.some(item => String(item.tidal_id) === targetId)
+        }
+    } catch (e) {
+        console.error("Failed to check library", e)
+    }
+}
+
+const addToLibrary = async () => {
+    try {
+        const payload = {
+            item_type: props.playlist.item_type || 'playlist',
+            name: playlistData.value?.name || props.playlist.name,
+            artist_name: playlistData.value?.artist || props.playlist.artist_name || props.playlist.artist,
+            picture_url: playlistData.value?.picture_url || props.playlist.picture_url,
+            sync_enabled: false,
+            qualities: (props.playlist.qualities && props.playlist.qualities.length > 0) ? props.playlist.qualities : ["HIGH"]
+        }
+        const res = await fetch(`/api/playlists/${props.playlist.tidal_id}/config`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        })
+        if (res.ok) {
+            isInLibrary.value = true
+        }
+    } catch (e) {
+        console.error("Failed to add to library", e)
+    }
+}
+
+const removeFromLibrary = async () => {
+    if (!confirm(`Remove ${props.playlist.name || playlistData.value?.name} from Library and delete downloaded files?`)) return
+    try {
+        await fetch(`/api/sync/delete/${props.playlist.tidal_id}`, { method: 'DELETE' }).catch(() => {})
+        const res = await fetch(`/api/playlists/${props.playlist.tidal_id}`, { method: 'DELETE' })
+        if (res.ok) {
+            isInLibrary.value = false
+            fetchDetailsSilent()
+        }
+    } catch (e) {
+        console.error("Failed to remove from library", e)
+    }
+}
 
 const deleteDownloads = async () => {
     isDeleting.value = true
@@ -64,9 +114,14 @@ const deleteDownloads = async () => {
 
 const downloadSingleTrack = async (trackId) => {
     try {
-        await fetch(`/api/sync/track/${props.playlist.tidal_id}/${trackId}`, { method: 'POST' })
-        // Optimistically we could update, but the daemon handles it. 
-        // Sync status will eventually reflect it.
+        const qualities = (props.playlist.qualities && props.playlist.qualities.length > 0)
+            ? props.playlist.qualities
+            : ['HIGH']
+        await fetch(`/api/sync/track/${props.playlist.tidal_id}/${trackId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(qualities)
+        })
     } catch (e) {
         console.error("Failed to start track download", e)
     }
@@ -89,6 +144,14 @@ const executeDeleteSingleTrack = async () => {
             method: 'DELETE'
         })
         if (res.ok) {
+            if (playlistData.value && playlistData.value.tracks) {
+                const tr = playlistData.value.tracks.find(t => t.id === trackId)
+                if (tr) {
+                    tr.is_downloaded = false
+                    tr.stream_url = `/api/music/stream/${trackId}`
+                    tr.quality = 'TIDAL'
+                }
+            }
             fetchDetailsSilent()
         }
     } catch (e) {
@@ -123,7 +186,8 @@ const fetchDetails = async () => {
     loading.value = true
     error.value = null
     try {
-        const res = await fetch(`/api/music/playlist/${props.playlist.tidal_id}`)
+        const endpoint = props.playlist.item_type === 'album' ? `/api/music/album/${props.playlist.tidal_id}` : `/api/music/playlist/${props.playlist.tidal_id}`
+        const res = await fetch(endpoint)
         if (res.ok) {
             playlistData.value = await res.json()
             applyStreamQuality()
@@ -142,6 +206,14 @@ const fetchDetails = async () => {
 
 onMounted(() => {
     fetchDetails()
+    if (props.isDiscover) {
+        checkLibrary()
+    }
+    window.addEventListener('streamQualityChanged', onQualityChanged)
+})
+
+onUnmounted(() => {
+    window.removeEventListener('streamQualityChanged', onQualityChanged)
 })
 
 const filteredTracks = computed(() => {
@@ -197,16 +269,15 @@ const playTrack = (track) => {
 
     if (!track.stream_url) return
     const idx = playlistData.value.tracks.findIndex(t => t.id === track.id)
-    playerStore.playPlaylist(playlistData.value.tidal_id, playlistData.value.name, playlistData.value.tracks, idx)
+    playerStore.playPlaylist(props.playlist.tidal_id, playlistData.value.name, playlistData.value.tracks, idx)
 }
 
 const togglePlayPlaylist = () => {
     if (playerStore.currentPlaylistId === props.playlist.tidal_id) {
         playerStore.togglePlayPause()
     } else {
-        const playableTrack = playlistData.value.tracks.find(t => t.is_downloaded)
-        if (playableTrack) {
-            playTrack(playableTrack)
+        if (playlistData.value && playlistData.value.tracks.length > 0) {
+            playTrack(playlistData.value.tracks[0])
         }
     }
 }
@@ -268,7 +339,8 @@ watch(() => syncStore.trackDeleted, (delEvent) => {
 
 const fetchDetailsSilent = async () => {
     try {
-        const res = await fetch(`/api/music/playlist/${props.playlist.tidal_id}`)
+        const endpoint = props.playlist.item_type === 'album' ? `/api/music/album/${props.playlist.tidal_id}` : `/api/music/playlist/${props.playlist.tidal_id}`
+        const res = await fetch(endpoint)
         if (res.ok) {
             playlistData.value = await res.json()
             applyStreamQuality()
@@ -316,9 +388,9 @@ const fetchDetailsSilent = async () => {
               </div>
               <div class="absolute inset-0 bg-background/60 backdrop-blur-3xl z-0"></div>
               
-              <button @click="emit('back')" class="absolute top-4 left-4 p-2 bg-black-base/30 hover:bg-black-base/50 text-text-primary rounded-full transition-colors backdrop-blur z-10">
-                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
-              </button>
+              <button @click="emit('back')" class="absolute top-4 left-4 p-3 bg-black/60 hover:bg-black/90 text-white rounded-full transition-colors backdrop-blur-md shadow-2xl border border-white/20 z-50">
+                <svg class="w-6 h-6 drop-shadow-md" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+            </button>
               
               <div class="relative z-10 w-48 h-48 md:w-64 md:h-64 shadow-2xl flex-shrink-0 mt-8 md:mt-0 mx-auto md:mx-0">
                   <img v-if="playlistData.picture_url" :src="playlistData.picture_url" class="w-full h-full object-cover rounded border border-white-base/10" />
@@ -333,13 +405,42 @@ const fetchDetailsSilent = async () => {
                           <span class="text-xs font-bold uppercase tracking-widest text-text-secondary">Playlist</span>
                           <h1 class="text-4xl md:text-7xl font-extrabold mb-2 line-clamp-2 leading-tight">{{ playlistData.name }}</h1>
                           <p class="text-sm text-text-secondary mb-6">
-                              <span class="font-semibold">{{ playlistData.tracks.filter(t => t.is_downloaded).length }} tracks</span> downloaded of {{ playlistData.tracks.length }} total
+                              <span v-if="isDiscover">
+                                  <span v-if="isInLibrary">
+                                      <span class="font-semibold text-accent">{{ playlistData.tracks.filter(t => t.is_downloaded).length }} tracks</span> downloaded of {{ playlistData.tracks.length }} total
+                                  </span>
+                                  <span v-else>{{ playlistData.tracks.length }} tracks</span>
+                              </span>
+                              <span v-else>
+                                  <span class="font-semibold">{{ playlistData.tracks.filter(t => t.is_downloaded).length }} tracks</span> downloaded of {{ playlistData.tracks.length }} total
+                              </span>
                           </p>
                       </div>
                   </div>
                   
-                  <!-- Sync Configuration inside Header -->
-                  <div class="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4 flex-wrap bg-surface-80 p-3 rounded-lg border border-border-highlight w-full backdrop-blur shadow-inner">
+                  <!-- Add / Remove from Library (Discover mode only) -->
+                  <div v-if="isDiscover" class="flex items-center justify-between gap-4 bg-surface-80 p-3 rounded-lg border border-border-highlight w-full backdrop-blur shadow-inner">
+                      <div>
+                          <p v-if="isInLibrary" class="text-sm text-text-secondary">
+                              <span class="font-semibold text-accent">{{ playlistData.tracks.filter(t => t.is_downloaded).length }}</span> of {{ playlistData.tracks.length }} tracks downloaded
+                          </p>
+                          <p v-else class="text-sm text-text-secondary">
+                              {{ playlistData.tracks.length }} tracks
+                          </p>
+                      </div>
+                      <div class="flex items-center gap-2">
+                          <button v-if="!isInLibrary" @click="addToLibrary" class="px-4 py-2 bg-accent hover:bg-accent-light text-text-inverse rounded-lg text-sm font-bold transition-colors flex items-center gap-2 shadow">
+                              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                              Add to Library
+                          </button>
+                          <button v-else @click="removeFromLibrary" class="px-4 py-2 bg-danger hover:bg-danger-light text-text-primary rounded-lg text-sm font-bold transition-colors flex items-center gap-2 shadow">
+                              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                              Remove from Library
+                          </button>
+                      </div>
+                  </div>
+                  <!-- Sync Configuration inside Header (Library mode only) -->
+                  <div v-if="!isDiscover" class="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4 flex-wrap bg-surface-80 p-3 rounded-lg border border-border-highlight w-full backdrop-blur shadow-inner">
                     <div class="flex flex-col md:flex-row flex-wrap gap-4">
                       <!-- Quality Select -->
                       <div class="flex flex-col">
@@ -352,16 +453,7 @@ const fetchDetailsSilent = async () => {
                         </div>
                       </div>
                       
-                      <!-- Stream Quality Select -->
-                      <div class="flex flex-col">
-                        <label class="text-xs text-text-muted mb-1 uppercase tracking-wide">Stream Quality</label>
-                        <select v-model="streamQuality" class="bg-surface-elevated border border-border-highlight rounded text-sm text-text-primary px-2 py-0.5 outline-none focus:border-accent appearance-none">
-                            <option value="HI_RES_LOSSLESS">MAX</option>
-                            <option value="LOSSLESS">LOSSLESS</option>
-                            <option value="HIGH">HIGH</option>
-                            <option value="LOW">LOW</option>
-                        </select>
-                      </div>
+
                     </div>
                     
                     <div class="flex items-center gap-4 ml-auto">
@@ -407,7 +499,7 @@ const fetchDetailsSilent = async () => {
                     </div>
                   </div>
                   <!-- Progress Bar -->
-                  <div v-if="getSyncStatus.status === 'syncing'" class="mt-2 h-1.5 w-full bg-surface-elevated rounded-full overflow-hidden">
+                  <div v-if="!isDiscover && getSyncStatus.status === 'syncing'" class="mt-2 h-1.5 w-full bg-surface-elevated rounded-full overflow-hidden">
                       <div class="h-full bg-accent transition-all duration-300" :style="`width: ${getSyncStatus.progress}%`"></div>
                   </div>
               </div>
@@ -417,10 +509,10 @@ const fetchDetailsSilent = async () => {
           <div class="p-6 bg-background flex justify-between items-center sticky top-0 z-10 border-b border-border-subtle-50 backdrop-blur bg-opacity-90">
               <button 
                   @click="togglePlayPlaylist()"
-                  class="w-14 h-14 bg-accent rounded-full flex items-center justify-center text-text-inverse hover:bg-accent-light hover:scale-105 transition-all shadow-lg"
+                  class="w-14 h-14 shrink-0 aspect-square bg-accent rounded-full flex items-center justify-center text-text-inverse hover:bg-accent-light hover:scale-105 transition-all shadow-lg"
               >
-                  <svg v-if="playerStore.currentPlaylistId === playlist.tidal_id && playerStore.isPlaying" class="w-7 h-7" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
-                  <svg v-else class="w-7 h-7 ml-1" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                  <svg v-if="playerStore.currentPlaylistId === playlist.tidal_id && playerStore.isPlaying" class="w-7 h-7 shrink-0" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+                  <svg v-else class="w-7 h-7 shrink-0 translate-x-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
               </button>
               
               <div class="relative w-64">
@@ -487,7 +579,7 @@ const fetchDetailsSilent = async () => {
                                   </div>
                                   <div v-else class="flex items-center justify-end gap-2">
                                         <span class="text-xs text-danger-light border border-danger-30 bg-danger-darkest-20 px-2 py-0.5 rounded" title="Streams directly from Tidal">STREAM</span>
-                                      <button @click.stop="downloadSingleTrack(track.id)" class="text-text-muted hover:text-accent transition-colors p-1 bg-surface hover:bg-surface-elevated rounded border border-border-strong" title="Download this track only">
+                                      <button v-if="!isDiscover" @click.stop="downloadSingleTrack(track.id)" class="text-text-muted hover:text-accent transition-colors p-1 bg-surface hover:bg-surface-elevated rounded border border-border-strong" title="Download this track only">
                                           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
                                       </button>
                                   </div>
@@ -513,7 +605,7 @@ const fetchDetailsSilent = async () => {
                                           <button v-if="track.is_downloaded" @click.stop="confirmDeleteSingleTrack(track)" class="text-text-muted hover:text-danger p-1 bg-surface rounded border border-border-strong" title="Delete this track">
                                               <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                                           </button>
-                                          <button v-else @click.stop="mobileDownloadTrack = track; mobileDownloadModalOpen = true" class="text-text-muted hover:text-accent p-1 bg-surface rounded border border-border-strong" title="Download this track">
+                                          <button v-else-if="!isDiscover" @click.stop="mobileDownloadTrack = track; mobileDownloadModalOpen = true" class="text-text-muted hover:text-accent p-1 bg-surface rounded border border-border-strong" title="Download this track">
                                               <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
                                           </button>
                                       </div>

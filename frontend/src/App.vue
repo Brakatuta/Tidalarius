@@ -1,7 +1,9 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import PlaylistsDashboard from './components/PlaylistsDashboard.vue'
+import Discover from './components/Discover.vue'
 import WebPlayer from './components/WebPlayer.vue'
+import SettingsModal from './components/SettingsModal.vue'
 import { syncStore } from './syncStore.js'
 
 const isLoggedIn = ref(false)
@@ -9,6 +11,8 @@ const isLoggingIn = ref(false)
 const loginUrl = ref('')
 const loginCode = ref('')
 const loginError = ref(null)
+const currentView = ref('library')
+const settingsModalOpen = ref(false)
 let pollInterval = null
 
 const checkStatus = async () => {
@@ -42,6 +46,7 @@ const stopPolling = () => {
 }
 
 const goHome = () => {
+    currentView.value = 'library'
     window.dispatchEvent(new CustomEvent('navigate-home'))
     if (window.location.search) {
         history.pushState(null, '', window.location.pathname)
@@ -92,16 +97,26 @@ onUnmounted(() => {
   <div class="min-h-screen flex flex-col pb-24"> <!-- padding for bottom player -->
     <!-- Navbar -->
     <header class="bg-surface p-4 shadow-md flex justify-between items-center z-10 relative">
-      <div class="flex items-center gap-2.5 md:gap-3 cursor-pointer select-none group" @click="goHome">
+      <div class="flex items-center gap-2.5 md:gap-3 cursor-pointer select-none group" @click="currentView = 'library'">
         <img src="/favicon.png" alt="Tidalarius Mascot" class="w-7 h-7 md:w-8 md:h-8 object-contain rounded-lg drop-shadow transition-transform group-hover:scale-105" />
         <h1 class="text-xl md:text-2xl font-bold text-accent group-hover:text-accent-light transition-colors">Tidalarius</h1>
       </div>
+      
+      <div v-if="isLoggedIn" class="flex-grow flex justify-center">
+        <div class="flex bg-surface-elevated rounded-full p-1 border border-border-strong">
+          <button @click="currentView = 'library'" :class="['px-4 md:px-6 py-1.5 rounded-full text-sm font-bold transition', currentView === 'library' ? 'bg-accent text-white shadow' : 'text-text-muted hover:text-text-primary']">
+            Library
+          </button>
+          <button @click="currentView = 'discover'" :class="['px-4 md:px-6 py-1.5 rounded-full text-sm font-bold transition', currentView === 'discover' ? 'bg-accent text-white shadow' : 'text-text-muted hover:text-text-primary']">
+            Discover
+          </button>
+        </div>
+      </div>
+      
       <div v-if="isLoggedIn" class="flex items-center gap-2 md:gap-4">
-        <span class="text-xs md:text-sm text-success flex items-center gap-1">
-          <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg>
-          <span class="hidden md:inline">Connected to Tidal</span>
-        </span>
-        <button @click="logout" class="text-xs md:text-sm bg-danger-dark hover:bg-danger px-2 md:px-3 py-1 rounded transition">Logout</button>
+        <button @click="settingsModalOpen = true" class="text-text-muted hover:text-text-primary p-2 transition rounded-full hover:bg-surface-elevated" title="Settings">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+        </button>
       </div>
     </header>
 
@@ -156,9 +171,12 @@ onUnmounted(() => {
       
       <!-- Dashboard Section -->
       <div v-else class="w-full max-w-6xl">
-        <PlaylistsDashboard />
+        <PlaylistsDashboard v-if="currentView === 'library'" />
+        <Discover v-else-if="currentView === 'discover'" />
       </div>
     </main>
     <WebPlayer v-if="isLoggedIn" />
+    
+    <SettingsModal v-if="settingsModalOpen" @close="settingsModalOpen = false" @logout="logout" />
   </div>
 </template>

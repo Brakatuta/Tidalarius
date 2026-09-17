@@ -9,8 +9,26 @@ from sync_api import router as sync_router
 from database import engine
 import models
 
+from sqlalchemy import text
+
 # Create database tables
 models.Base.metadata.create_all(bind=engine)
+
+# Migration: add new columns if they don't exist
+with engine.connect() as conn:
+    try:
+        conn.execute(text("ALTER TABLE playlist_configs ADD COLUMN item_type VARCHAR DEFAULT 'playlist'"))
+    except:
+        pass
+    try:
+        conn.execute(text("ALTER TABLE playlist_configs ADD COLUMN artist_name VARCHAR"))
+    except:
+        pass
+    try:
+        conn.execute(text("ALTER TABLE playlist_configs ADD COLUMN picture_url VARCHAR"))
+    except:
+        pass
+    conn.commit()
 
 app = FastAPI(title="Tidalarius")
 

@@ -31,7 +31,9 @@ export const syncStore = reactive({
       } else if (data.type === 'sync_log') {
         this.syncLogs[pid].push(data.message)
       } else if (data.type === 'sync_finished') {
+        if (!this.syncState[pid]) this.syncState[pid] = {}
         this.syncState[pid].status = 'idle'
+        this.syncState[pid].last_synced = new Date().toISOString()
         this.syncState[pid].report_url = data.report_url
         this.syncLogs[pid].push("SYNC FINISHED.")
       } else if (data.type === 'sync_error') {
@@ -40,8 +42,15 @@ export const syncStore = reactive({
         this.syncLogs[pid].push(`ERROR: ${data.error}`)
       } else if (data.type === 'track_downloaded') {
         this.lastDownloadedTrack = { playlist_id: pid, track_name: data.track_name, quality: data.quality, timestamp: Date.now() }
+        if (!this.syncState[pid]) this.syncState[pid] = {}
+        this.syncState[pid].last_synced = new Date().toISOString()
+        this.syncState[pid].quality = data.quality
       } else if (data.type === 'track_deleted') {
         this.trackDeleted = { playlist_id: pid, track_id: data.track_id, timestamp: Date.now() }
+        if (this.syncState[pid]) {
+          this.syncState[pid].last_synced = null
+          delete this.syncState[pid].last_synced
+        }
       }
     }
     

@@ -6,7 +6,10 @@ class PlaylistConfig(Base):
     __tablename__ = "playlist_configs"
 
     tidal_id = Column(String, primary_key=True, index=True)
+    item_type = Column(String, default="playlist") # playlist, album, track
     name = Column(String, index=True)
+    artist_name = Column(String, nullable=True)
+    picture_url = Column(String, nullable=True)
     sync_enabled = Column(Boolean, default=False)
     # Qualities stored as a JSON array of strings e.g. ["LOW", "HIGH", "LOSSLESS", "HI_RES", "HI_RES_LOSSLESS"]
     qualities = Column(JSON, default=list)
@@ -17,7 +20,10 @@ class PlaylistConfig(Base):
     def to_dict(self):
         return {
             "tidal_id": self.tidal_id,
+            "item_type": self.item_type or "playlist",
             "name": self.name,
+            "artist_name": self.artist_name,
+            "picture_url": self.picture_url,
             "sync_enabled": self.sync_enabled,
             "qualities": self.qualities or [],
             "schedule": self.schedule,

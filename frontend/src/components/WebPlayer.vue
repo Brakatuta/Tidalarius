@@ -87,8 +87,45 @@ const onEnded = () => {
     playerStore.next()
 }
 
-const onError = () => {
-    console.error("Audio playback error, skipping to next track")
+const onError = (e) => {
+    console.error("Audio playback error:", e)
+    
+    // Attempt fallback for local file error (e.g. unsupported FLAC in Safari)
+    if (playerStore.currentTrack && playerStore.currentTrack.stream_url) {
+        const url = playerStore.currentTrack.stream_url;
+        
+        if (url.startsWith('/music_files/')) {
+            console.log("Local file playback failed, falling back to Tidal stream...");
+            playerStore.currentTrack.stream_url = `/api/music/stream/${playerStore.currentTrack.id}?quality=HIGH`;
+            if (audioRef.value) {
+                audioRef.value.src = playerStore.currentTrack.stream_url;
+                audioRef.value.play().catch(err => console.error("Fallback to stream failed", err));
+            }
+            return;
+        }
+
+        // Attempt frontend quality fallback for unsupported stream formats (e.g. FLAC on iOS Safari)
+        let newQuality = null;
+        if (url.includes('quality=HI_RES_LOSSLESS') || url.includes('quality=MAX')) {
+            newQuality = 'LOSSLESS';
+        } else if (url.includes('quality=LOSSLESS')) {
+            newQuality = 'HIGH';
+        } else if (url.includes('quality=HIGH')) {
+            newQuality = 'LOW';
+        }
+        
+        if (newQuality) {
+            console.log(`Fallback: Retrying playback with quality=${newQuality}`);
+            playerStore.currentTrack.stream_url = url.replace(/quality=[A-Z_]+/, `quality=${newQuality}`);
+            if (audioRef.value) {
+                audioRef.value.src = playerStore.currentTrack.stream_url;
+                audioRef.value.play().catch(err => console.error("Fallback playback failed", err));
+            }
+            return;
+        }
+    }
+    
+    console.error("All qualities failed or unrecoverable error. Skipping to next track in 1.5s.")
     setTimeout(() => {
         if (playerStore.isPlaying) playerStore.next()
     }, 1500)
@@ -171,17 +208,14 @@ const formatTime = (seconds) => {
               </button>
           </div>
           
-          <div class="hidden md:flex items-center gap-2 w-full max-w-md">
+          <div class="flex items-center gap-1 md:gap-2 w-[160px] sm:w-[250px] md:w-full max-w-md mt-2 md:mt-0">
               <span class="text-xs text-text-muted w-10 text-right tabular-nums">{{ formatTime(currentTime) }}</span>
               <input type="range" min="0" :max="100" :value="duration ? (currentTime / duration) * 100 : 0" @input="seek"
                      class="w-full h-1.5 rounded-lg appearance-none cursor-pointer slider-thumb-accent" :style="progressStyle">
               <span class="text-xs text-text-muted w-10 tabular-nums">{{ formatTime(duration) }}</span>
           </div>
           
-          <!-- Mobile progress bar (absolute to top of player) -->
-          <div class="md:hidden absolute top-0 left-0 right-0 h-1 bg-surface-elevated">
-              <div class="h-full bg-accent" :style="{ width: `${duration ? (currentTime / duration) * 100 : 0}%` }"></div>
-          </div>
+          
       </div>
       
       <!-- Right: Quality & Volume -->
