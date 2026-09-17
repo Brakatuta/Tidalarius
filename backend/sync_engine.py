@@ -167,7 +167,21 @@ def download_track_via_tidalapi(track, quality_str, base_path):
         
         try:
             # Get the stream URL from Tidal
-            stream = track.get_stream()
+            try:
+                stream = track.get_stream()
+            except Exception as e:
+                # Catch 401 Unauthorized, refresh token, and retry once
+                if "401" in str(e) and getattr(global_session, "refresh_token", None):
+                    print("[WORKER] Token expired (401). Refreshing token and retrying...", flush=True)
+                    from backend import tidal_auth
+                    if global_session.token_refresh(global_session.refresh_token):
+                        tidal_auth.save_session(global_session)
+                        stream = track.get_stream()
+                    else:
+                        raise e
+                else:
+                    raise e
+                    
             manifest = stream.get_stream_manifest()
         finally:
             # Restore original quality setting
@@ -266,6 +280,7 @@ def download_track_via_ytdlp(track, base_path):
         
         ydl_opts = {
             'format': 'bestaudio/best',
+            'extractor_args': {'youtube': ['client=ANDROID']},
             'postprocessors': [{
                 'key': 'FFmpegExtractAudio',
                 'preferredcodec': 'm4a',
