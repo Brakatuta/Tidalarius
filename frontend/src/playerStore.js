@@ -15,7 +15,7 @@ export const playerStore = reactive({
     this.currentPlaylistName = playlistName
     
     // Filter to only playable tracks
-    this.tracks = tracks.filter(t => t.is_downloaded && t.stream_url)
+    this.tracks = tracks.filter(t => t.stream_url)
     
     if (this.tracks.length === 0) return
     

@@ -421,7 +421,7 @@ const fetchDetailsSilent = async () => {
                                       </svg>
                                   </span>
                                   <span v-else class="group-hover:hidden">{{ track.playlist_pos || (index + 1) }}</span>
-                                  <svg v-if="!(playerStore.currentTrack && playerStore.currentTrack.id === track.id) && track.is_downloaded" class="w-4 h-4 hidden group-hover:inline text-text-primary" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                                  <svg v-if="!(playerStore.currentTrack && playerStore.currentTrack.id === track.id)" class="w-4 h-4 hidden group-hover:inline text-text-primary" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
                               </td>
                               <td class="py-3">
                                   <div class="flex items-center gap-3">
@@ -447,7 +447,7 @@ const fetchDetailsSilent = async () => {
                                       </button>
                                   </div>
                                   <div v-else class="flex items-center justify-end gap-2">
-                                        <span class="text-xs text-danger-light border border-danger-30 bg-danger-darkest-20 px-2 py-0.5 rounded" title="Streams directly from Tidal">TIDAL STREAM</span>
+                                        <span class="text-xs text-danger-light border border-danger-30 bg-danger-darkest-20 px-2 py-0.5 rounded" title="Streams directly from Tidal">STREAM</span>
                                       <button @click.stop="downloadSingleTrack(track.id)" class="text-text-muted hover:text-accent transition-colors p-1 bg-surface hover:bg-surface-elevated rounded border border-border-strong" title="Download this track only">
                                           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
                                       </button>
@@ -468,7 +468,7 @@ const fetchDetailsSilent = async () => {
                                               {{ track.quality === 'HI_RES_LOSSLESS' ? 'MAX' : track.quality }}
                                           </span>
                                           <span v-else class="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold tracking-wider bg-danger-darkest-20 text-danger-light border border-danger-30">
-                                              TIDAL
+                                              STREAM
                                           </span>
                                           
                                           <button v-if="track.is_downloaded" @click.stop="confirmDeleteSingleTrack(track)" class="text-text-muted hover:text-danger p-1 bg-surface rounded border border-border-strong" title="Delete this track">
