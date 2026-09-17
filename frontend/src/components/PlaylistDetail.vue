@@ -122,12 +122,16 @@ onMounted(() => {
 const filteredTracks = computed(() => {
     if (!playlistData.value || !playlistData.value.tracks) return []
     if (!searchQuery.value) return playlistData.value.tracks
-    const q = searchQuery.value.toLowerCase()
-    return playlistData.value.tracks.filter(t => 
-        t.title.toLowerCase().includes(q) || 
-        t.artist.toLowerCase().includes(q) ||
-        t.album.toLowerCase().includes(q)
-    )
+    
+    // Split search query into individual words (lowercase)
+    const terms = searchQuery.value.toLowerCase().split(' ').filter(t => t.trim() !== '')
+    
+    return playlistData.value.tracks.filter(t => {
+        // Create a combined string of all searchable fields
+        const combined = `${t.title} ${t.artist} ${t.album}`.toLowerCase()
+        // The track matches if ALL search terms are found somewhere in the combined string
+        return terms.every(term => combined.includes(term))
+    })
 })
 
 const getQualityClasses = (quality) => {
