@@ -132,7 +132,7 @@ const filteredTracks = computed(() => {
 
 const getQualityClasses = (quality) => {
     switch (quality) {
-        case 'LOW': return 'bg-success-dark-20 text-success border border-success-dark-50'
+        case 'LOW': return 'bg-green-900/40 text-green-400 border border-green-700/50'
         case 'HIGH': return 'bg-info-20 text-info-light border border-info-30'
         case 'LOSSLESS': return 'bg-warning-20 text-warning border border-warning-30'
         case 'HI_RES_LOSSLESS': return 'bg-purple-900/40 text-purple-400 border border-purple-500/50'
@@ -422,7 +422,7 @@ const fetchDetailsSilent = async () => {
                                           <rect x="16" y="12" width="4" height="8" class="animate-pulse" style="animation-delay: 0.4s" />
                                       </svg>
                                   </span>
-                                  <span v-else class="group-hover:hidden">{{ index + 1 }}</span>
+                                  <span v-else class="group-hover:hidden">{{ track.playlist_pos || (index + 1) }}</span>
                                   <svg v-if="!(playerStore.currentTrack && playerStore.currentTrack.id === track.id) && track.is_downloaded" class="w-4 h-4 hidden group-hover:inline text-text-primary" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
                               </td>
                               <td class="py-3">

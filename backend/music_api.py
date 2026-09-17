@@ -54,7 +54,24 @@ def get_playlist_details(playlist_id: str, db: Session = Depends(get_db)):
         
     try:
         p = global_session.playlist(playlist_id)
-        tracks = list(p.tracks(limit=10000))
+        
+        # Fetch tracks with pagination to avoid tidalapi limit bugs and duplicate pages
+        tracks = []
+        seen_ids = set()
+        offset = 0
+        limit = 1000
+        while True:
+            batch = p.tracks(limit=limit, offset=offset)
+            if not batch:
+                break
+            for t in batch:
+                if t.id not in seen_ids:
+                    tracks.append(t)
+                    seen_ids.add(t.id)
+            offset += len(batch)
+            if len(batch) < limit:
+                break
+                
         playlist_name = p.name
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch playlist from Tidal: {str(e)}")
@@ -71,7 +88,7 @@ def get_playlist_details(playlist_id: str, db: Session = Depends(get_db)):
         local_files = [f.name for f in os.scandir(playlist_dir) if f.is_file()]
         
     result_tracks = []
-    for track in tracks:
+    for idx, track in enumerate(tracks, start=1):
         track_num = track.track_num or 1
         artist_name = sanitize_filename(track.artist.name if track.artist else "Unknown Artist")
         album_name = sanitize_filename(track.album.name if track.album else "Unknown Album")
@@ -125,6 +142,7 @@ def get_playlist_details(playlist_id: str, db: Session = Depends(get_db)):
             "album": track.album.name if track.album else "Unknown Album",
             "duration": track.duration, # in seconds
             "track_num": track_num,
+            "playlist_pos": idx,
             "picture_url": track.album.image(320) if track.album and hasattr(track.album, 'image') and callable(track.album.image) else None,
             "is_downloaded": local_filename is not None,
             "stream_url": stream_url,

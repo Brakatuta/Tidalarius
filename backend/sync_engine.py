@@ -328,7 +328,19 @@ def process_playlist_sync(playlist_id, qualities, track_id=None):
         playlist = global_session.playlist(playlist_id)
         print(f"[WORKER] Fetched playlist: {playlist.name}", flush=True)
         
-        tracks = list(playlist.tracks(limit=10000))
+        tracks = []
+        seen_ids = set()
+        offset = 0
+        limit = 1000
+        while True:
+            batch = playlist.tracks(limit=limit, offset=offset)
+            if not batch: break
+            for t in batch:
+                if t.id not in seen_ids:
+                    tracks.append(t)
+                    seen_ids.add(t.id)
+            offset += len(batch)
+            if len(batch) < limit: break
         
         # Filter for single track sync if specified
         if track_id is not None:

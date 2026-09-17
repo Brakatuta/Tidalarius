@@ -3,6 +3,17 @@ import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { playerStore } from '../playerStore.js'
 
 const audioRef = ref(null)
+
+const getQualityClasses = (quality) => {
+    switch (quality) {
+        case 'LOW': return 'bg-green-900/40 text-green-400 border border-green-700/50'
+        case 'HIGH': return 'bg-info-20 text-info-light border border-info-30'
+        case 'LOSSLESS': return 'bg-warning-20 text-warning border border-warning-30'
+        case 'HI_RES_LOSSLESS': return 'bg-purple-900/40 text-purple-400 border border-purple-500/50'
+        case 'OTHER': return 'bg-pink-900/40 text-pink-400 border border-pink-500/50'
+        default: return 'bg-surface-elevated text-text-secondary border border-border-strong'
+    }
+}
 const currentTime = ref(0)
 const duration = ref(0)
 const volume = ref(0.8)
@@ -122,8 +133,8 @@ const formatTime = (seconds) => {
               <div class="flex flex-col truncate max-w-full">
                   <div class="flex items-center mb-0.5">
                       <span class="px-1.5 py-0.5 rounded text-[8px] md:text-[10px] font-mono font-bold tracking-wider leading-none" 
-                          :class="playerStore.currentTrack.quality === 'LOSSLESS' ? 'bg-warning-20 text-warning border border-warning-30' : 'bg-info-20 text-info-light border border-info-30'">
-                          {{ playerStore.currentTrack.quality }}
+                          :class="getQualityClasses(playerStore.currentTrack.quality)">
+                          {{ playerStore.currentTrack.quality === 'HI_RES_LOSSLESS' ? 'MAX' : playerStore.currentTrack.quality }}
                       </span>
                   </div>
                   <span class="text-text-primary font-medium text-sm md:text-base hover:underline cursor-pointer truncate">{{ playerStore.currentTrack.title }}</span>

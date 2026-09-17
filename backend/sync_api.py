@@ -164,10 +164,22 @@ def delete_single_track(playlist_id: str, track_id: int):
         raise HTTPException(status_code=404, detail='Playlist not found')
     
     target_track = None
-    for track in playlist.tracks(limit=10000):
-        if track.id == track_id:
-            target_track = track
-            break
+    seen_ids = set()
+    offset = 0
+    limit = 1000
+    while True:
+        batch = playlist.tracks(limit=limit, offset=offset)
+        if not batch: break
+        for track in batch:
+            if track.id not in seen_ids:
+                seen_ids.add(track.id)
+                if track.id == track_id:
+                    target_track = track
+                    break
+        if target_track: break
+        offset += len(batch)
+        if len(batch) < limit: break
+
             
     if not target_track:
         raise HTTPException(status_code=404, detail='Track not found in playlist')
