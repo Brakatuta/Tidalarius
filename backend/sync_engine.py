@@ -55,7 +55,7 @@ def download_cover(track):
         print(f"Cover download failed for '{track.name}': {e}")
     return None
 
-def write_metadata(file_path, track, cover_data=None):
+def write_metadata(file_path, track, cover_data=None, quality=None):
     """Write ID3/Vorbis metadata to the downloaded file using mutagen."""
     try:
         ext = file_path.suffix.lower()
@@ -79,6 +79,9 @@ def write_metadata(file_path, track, cover_data=None):
             if hasattr(track, 'isrc') and track.isrc:
                 audio["ISRC"] = track.isrc
                 
+            if quality:
+                audio["COMMENT"] = f"QUALITY={quality}"
+                
             if cover_data:
                 pic = Picture()
                 pic.data = cover_data
@@ -98,6 +101,12 @@ def write_metadata(file_path, track, cover_data=None):
             if cover_data:
                 mp4 = MP4(str(file_path))
                 mp4["covr"] = [MP4Cover(cover_data, imageformat=MP4Cover.FORMAT_JPEG)]
+                if quality:
+                    mp4["\xa9cmt"] = f"QUALITY={quality}"
+                mp4.save()
+            elif quality:
+                mp4 = MP4(str(file_path))
+                mp4["\xa9cmt"] = f"QUALITY={quality}"
                 mp4.save()
             
             # Then: text tags via EasyMP4
@@ -154,6 +163,19 @@ def download_track_via_tidalapi(track, quality_str, base_path):
         ext = manifest.file_extension
         if not ext.startswith("."):
             ext = "." + ext
+            
+        actual_q_str = str(stream.audio_quality).upper()
+        if "HI_RES" in actual_q_str:
+            actual_quality_label = "HI_RES_LOSSLESS"
+        elif "LOSSLESS" in actual_q_str:
+            actual_quality_label = "LOSSLESS"
+        elif "HIGH" in actual_q_str:
+            actual_quality_label = "HIGH"
+        elif "LOW" in actual_q_str:
+            actual_quality_label = "LOW"
+        else:
+            actual_quality_label = quality_str
+            
         codecs = manifest.get_codecs()
         
         # Build the file path: base_path/Artist/Album/TrackNum - Title.ext
@@ -187,7 +209,7 @@ def download_track_via_tidalapi(track, quality_str, base_path):
         
         # Download cover art and write metadata
         cover_data = download_cover(track)
-        write_metadata(file_path, track, cover_data)
+        write_metadata(file_path, track, cover_data, quality=actual_quality_label)
         
         # Also save cover as folder.jpg if it doesn't exist
         cover_path = track_dir / "folder.jpg"
@@ -200,6 +222,56 @@ def download_track_via_tidalapi(track, quality_str, base_path):
     except Exception as e:
         return False, str(e), ""
 
+
+def download_track_via_ytdlp(track, base_path):
+    """Fallback mechanism using yt-dlp to download from YouTube"""
+    try:
+        import yt_dlp
+        artist_name = sanitize_filename(track.artist.name if track.artist else "Unknown Artist")
+        album_name = sanitize_filename(track.album.name if track.album else "Unknown Album")
+        track_title = sanitize_filename(track.name)
+        track_num = track.track_num or 1
+        
+        track_dir = Path(base_path) / artist_name / album_name
+        track_dir.mkdir(parents=True, exist_ok=True)
+        
+        search_query = f"ytsearch1:{track.artist.name if track.artist else ''} {track.name} audio"
+        
+        file_name = f"{track_num:02d} - {track_title}"
+        final_file_path = track_dir / f"{file_name}.m4a"
+        
+        if final_file_path.exists() and final_file_path.stat().st_size > 100_000:
+            return True, f"Already exists ({final_file_path.stat().st_size} bytes)", str(final_file_path)
+            
+        file_path_template = track_dir / f"{file_name}.%(ext)s"
+        
+        ydl_opts = {
+            'format': 'bestaudio/best',
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'm4a',
+                'preferredquality': '192',
+            }],
+            'outtmpl': str(file_path_template),
+            'quiet': True,
+            'no_warnings': True,
+            'extract_audio': True
+        }
+        
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            print(f"Fallback downloading '{track.name}' via YouTube...", flush=True)
+            ydl.download([search_query])
+            
+        final_file_path = track_dir / f"{file_name}.m4a"
+        if not final_file_path.exists():
+            return False, "yt-dlp failed to produce output file", ""
+            
+        cover_data = download_cover(track)
+        write_metadata(final_file_path, track, cover_data, quality="OTHER")
+        
+        return True, f"Fallback Downloaded via YouTube (OTHER)", str(final_file_path)
+    except Exception as e:
+        return False, f"Fallback yt-dlp failed: {str(e)}", ""
 
 def download_track(track, quality, base_path):
     """Main download dispatcher."""
@@ -223,7 +295,16 @@ def download_track(track, quality, base_path):
             return False, f"Tidarr connection failed: {str(e)}", ""
     
     # Use tidalapi directly for downloading
-    return download_track_via_tidalapi(track, quality, base_path)
+    success, msg, path = download_track_via_tidalapi(track, quality, base_path)
+    
+    # Fallback if Tidal fails (e.g. Geoblocked, Subscription limits)
+    if not success and "Already exists" not in msg:
+        print(f"[WORKER] Tidal download failed for '{track.name}': {msg}. Trying fallback via yt-dlp...", flush=True)
+        fallback_success, fallback_msg, fallback_path = download_track_via_ytdlp(track, base_path)
+        if fallback_success:
+            return True, fallback_msg, fallback_path
+            
+    return success, msg, path
 
 
 def process_playlist_sync(playlist_id, qualities, track_id=None):

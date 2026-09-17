@@ -18,3 +18,4 @@ docker-compose-linux.yml
 remote_server_current_media_download_docker.txt
 scratch/
 *.txt
+*.code-workspace

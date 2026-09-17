@@ -80,12 +80,30 @@ def get_playlist_details(playlist_id: str, db: Session = Depends(get_db)):
         expected_prefix = os.path.join(artist_name, album_name, f"{track_num:02d} - {track_title}")
         
         local_filename = None
-        for ext, quality in [(".flac", "LOSSLESS"), (".m4a", "HIGH")]:
+        quality_label = "Unknown"
+        
+        # Check possible extensions
+        for ext in [".flac", ".m4a"]:
             rel_path = expected_prefix + ext
             full_path = os.path.join(playlist_dir, rel_path)
             if os.path.exists(full_path):
                 local_filename = rel_path
-                quality_label = quality
+                # Default guess based on extension in case tag is missing
+                quality_label = "LOSSLESS" if ext == ".flac" else "HIGH"
+                
+                # Try to extract the true quality from mutagen tag
+                try:
+                    import mutagen
+                    audio = mutagen.File(full_path)
+                    if audio is not None:
+                        # FLAC uses COMMENT, MP4 uses \xa9cmt
+                        comments = audio.get("COMMENT", audio.get("\xa9cmt", []))
+                        for c in comments:
+                            if isinstance(c, str) and c.startswith("QUALITY="):
+                                quality_label = c.replace("QUALITY=", "").strip()
+                                break
+                except Exception:
+                    pass
                 break
                 
         # Must url encode the filename and playlist name for the URL!

@@ -130,6 +130,17 @@ const filteredTracks = computed(() => {
     )
 })
 
+const getQualityClasses = (quality) => {
+    switch (quality) {
+        case 'LOW': return 'bg-success-dark-20 text-success border border-success-dark-50'
+        case 'HIGH': return 'bg-info-20 text-info-light border border-info-30'
+        case 'LOSSLESS': return 'bg-warning-20 text-warning border border-warning-30'
+        case 'HI_RES_LOSSLESS': return 'bg-purple-900/40 text-purple-400 border border-purple-500/50'
+        case 'OTHER': return 'bg-pink-900/40 text-pink-400 border border-pink-500/50'
+        default: return 'bg-surface-elevated text-text-secondary border border-border-strong'
+    }
+}
+
 const formatTime = (seconds) => {
     if (!seconds) return "0:00"
     const m = Math.floor(seconds / 60)
@@ -430,8 +441,8 @@ const fetchDetailsSilent = async () => {
                               <td class="py-3 text-right pr-4 hidden md:table-cell">
                                   <div v-if="track.is_downloaded" class="flex items-center justify-end gap-2">
                                       <span class="px-2 py-0.5 rounded text-xs font-mono font-bold tracking-wider" 
-                                          :class="track.quality === 'LOSSLESS' ? 'bg-warning-20 text-warning border border-warning-30' : 'bg-info-20 text-info-light border border-info-30'">
-                                          {{ track.quality }}
+                                          :class="getQualityClasses(track.quality)">
+                                          {{ track.quality === 'HI_RES_LOSSLESS' ? 'MAX' : track.quality }}
                                       </span>
                                       <button @click.stop="confirmDeleteSingleTrack(track)" class="text-text-muted hover:text-danger transition-colors p-1 bg-surface hover:bg-surface-elevated rounded border border-border-strong" title="Delete this track">
                                           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
@@ -455,8 +466,8 @@ const fetchDetailsSilent = async () => {
                                       <div class="flex items-center gap-2">
                                           <span class="text-text-muted">Quality:</span>
                                           <span v-if="track.is_downloaded" class="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold tracking-wider" 
-                                              :class="track.quality === 'LOSSLESS' ? 'bg-warning-20 text-warning border border-warning-30' : 'bg-info-20 text-info-light border border-info-30'">
-                                              {{ track.quality }}
+                                              :class="getQualityClasses(track.quality)">
+                                              {{ track.quality === 'HI_RES_LOSSLESS' ? 'MAX' : track.quality }}
                                           </span>
                                           <button v-if="track.is_downloaded" @click.stop="confirmDeleteSingleTrack(track)" class="text-text-muted hover:text-danger p-1 bg-surface rounded border border-border-strong" title="Delete this track">
                                               <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
