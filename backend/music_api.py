@@ -133,7 +133,8 @@ def get_playlist_details(playlist_id: str, db: Session = Depends(get_db)):
             encoded_local_filename = "/".join([urllib.parse.quote(p) for p in local_filename.replace('\\', '/').split('/')])
             stream_url = f"/music_files/{encoded_safe_name}/{encoded_local_filename}"
         else:
-            quality_label = "Unknown"
+            quality_label = "TIDAL"
+            stream_url = f"/api/music/stream/{track.id}"
                 
         result_tracks.append({
             "id": track.id,
@@ -156,3 +157,29 @@ def get_playlist_details(playlist_id: str, db: Session = Depends(get_db)):
         "tracks": result_tracks
     }
 
+@router.get("/stream/{track_id}")
+def stream_track_from_tidal(track_id: int):
+    """Directly stream a track from Tidal if it's not downloaded."""
+    try:
+        from backend.tidal_auth import global_session
+        track = global_session.track(track_id)
+        stream = track.get_stream()
+        urls = stream.get_urls()
+        if urls:
+            return RedirectResponse(urls[0])
+        raise HTTPException(404, "No stream URL found from Tidal")
+    except Exception as e:
+        # Handle 401 token refresh just in case
+        if "401" in str(e):
+            from backend.tidal_auth import global_session, save_session
+            if getattr(global_session, "refresh_token", None) and global_session.token_refresh(global_session.refresh_token):
+                save_session(global_session)
+                try:
+                    track = global_session.track(track_id)
+                    stream = track.get_stream()
+                    urls = stream.get_urls()
+                    if urls:
+                        return RedirectResponse(urls[0])
+                except Exception as inner_e:
+                    raise HTTPException(500, f"Error after token refresh: {str(inner_e)}")
+        raise HTTPException(500, f"Error getting stream from Tidal: {str(e)}")

@@ -167,16 +167,10 @@ const playTrack = (track) => {
     const isMobile = window.innerWidth < 768;
     
     if (isMobile) {
-        if (!track.is_downloaded) {
-            mobileDownloadTrack.value = track;
-            mobileDownloadModalOpen.value = true;
-            return;
-        } else {
-            expandedTrackId.value = expandedTrackId.value === track.id ? null : track.id;
-        }
+        expandedTrackId.value = expandedTrackId.value === track.id ? null : track.id;
     }
 
-    if (!track.is_downloaded || !track.stream_url) return
+    if (!track.stream_url) return
     const idx = playlistData.value.tracks.findIndex(t => t.id === track.id)
     playerStore.playPlaylist(playlistData.value.tidal_id, playlistData.value.name, playlistData.value.tracks, idx)
 }
@@ -415,7 +409,7 @@ const fetchDetailsSilent = async () => {
                           <tr @click="playTrack(track)"
                               :class="[
                                   'group border-b border-border-subtle-50 hover:bg-surface-80 transition-colors',
-                                  !track.is_downloaded ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer',
+                                  !track.is_downloaded ? 'opacity-70 cursor-pointer' : 'cursor-pointer',
                                   playerStore.currentTrack && playerStore.currentTrack.id === track.id ? 'bg-surface' : ''
                               ]">
                               <td class="py-3 text-center">
@@ -453,7 +447,7 @@ const fetchDetailsSilent = async () => {
                                       </button>
                                   </div>
                                   <div v-else class="flex items-center justify-end gap-2">
-                                      <span class="text-xs text-danger-light border border-danger-30 bg-danger-darkest-20 px-2 py-0.5 rounded">MISSING</span>
+                                        <span class="text-xs text-danger-light border border-danger-30 bg-danger-darkest-20 px-2 py-0.5 rounded" title="Streams directly from Tidal">TIDAL STREAM</span>
                                       <button @click.stop="downloadSingleTrack(track.id)" class="text-text-muted hover:text-accent transition-colors p-1 bg-surface hover:bg-surface-elevated rounded border border-border-strong" title="Download this track only">
                                           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
                                       </button>
@@ -473,8 +467,15 @@ const fetchDetailsSilent = async () => {
                                               :class="getQualityClasses(track.quality)">
                                               {{ track.quality === 'HI_RES_LOSSLESS' ? 'MAX' : track.quality }}
                                           </span>
+                                          <span v-else class="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold tracking-wider bg-danger-darkest-20 text-danger-light border border-danger-30">
+                                              TIDAL
+                                          </span>
+                                          
                                           <button v-if="track.is_downloaded" @click.stop="confirmDeleteSingleTrack(track)" class="text-text-muted hover:text-danger p-1 bg-surface rounded border border-border-strong" title="Delete this track">
                                               <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                          </button>
+                                          <button v-else @click.stop="mobileDownloadTrack = track; mobileDownloadModalOpen = true" class="text-text-muted hover:text-accent p-1 bg-surface rounded border border-border-strong" title="Download this track">
+                                              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
                                           </button>
                                       </div>
                                   </div>
