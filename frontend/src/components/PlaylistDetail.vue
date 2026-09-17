@@ -23,6 +23,19 @@ const deleteModalOpen = ref(false)
 const saving = ref(false)
 const isDeleting = ref(false)
 const qualityOptions = ['LOW', 'HIGH', 'LOSSLESS', 'HI_RES_LOSSLESS']
+const streamQuality = ref(localStorage.getItem('streamQuality') || 'HIGH')
+
+watch(streamQuality, (newQ) => {
+    localStorage.setItem('streamQuality', newQ)
+    if (playlistData.value && playlistData.value.tracks) {
+        playlistData.value.tracks.forEach(t => {
+            if (!t.is_downloaded && t.stream_url && t.stream_url.includes('/api/music/stream/')) {
+                const baseUrl = t.stream_url.split('?')[0]
+                t.stream_url = `${baseUrl}?quality=${newQ}`
+            }
+        })
+    }
+})
 const commonSchedules = [
   { label: 'Never (Manual Only)', value: null },
   { label: 'Every hour', value: '0 * * * *' },
@@ -95,6 +108,17 @@ const collageImages = computed(() => {
     return [...new Set(urls)].slice(0, 10)
 })
 
+const applyStreamQuality = () => {
+    if (playlistData.value && playlistData.value.tracks) {
+        playlistData.value.tracks.forEach(t => {
+            if (!t.is_downloaded && t.stream_url && t.stream_url.includes('/api/music/stream/')) {
+                const baseUrl = t.stream_url.split('?')[0]
+                t.stream_url = `${baseUrl}?quality=${streamQuality.value}`
+            }
+        })
+    }
+}
+
 const fetchDetails = async () => {
     loading.value = true
     error.value = null
@@ -102,6 +126,7 @@ const fetchDetails = async () => {
         const res = await fetch(`/api/music/playlist/${props.playlist.tidal_id}`)
         if (res.ok) {
             playlistData.value = await res.json()
+            applyStreamQuality()
             syncStore.fetchStatus(props.playlist.tidal_id)
         } else {
             const data = await res.json()
@@ -246,6 +271,7 @@ const fetchDetailsSilent = async () => {
         const res = await fetch(`/api/music/playlist/${props.playlist.tidal_id}`)
         if (res.ok) {
             playlistData.value = await res.json()
+            applyStreamQuality()
         }
     } catch (e) {
         // ignore
@@ -314,14 +340,27 @@ const fetchDetailsSilent = async () => {
                   
                   <!-- Sync Configuration inside Header -->
                   <div class="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4 bg-surface-80 p-3 rounded-lg border border-border-highlight w-full backdrop-blur shadow-inner">
-                    <!-- Quality Select -->
-                    <div class="flex flex-col">
-                      <label class="text-xs text-text-muted mb-1 uppercase tracking-wide">Download Quality Priority</label>
-                      <div class="flex gap-2">
-                        <label v-for="q in qualityOptions" :key="q" class="flex items-center gap-1 text-sm cursor-pointer text-text-secondary">
-                          <input type="checkbox" :value="q" v-model="playlist.qualities" @change="saveConfig()" class="accent-accent bg-surface-elevated border-border-highlight rounded">
-                          {{ q === 'HI_RES_LOSSLESS' ? 'MAX' : q }}
-                        </label>
+                    <div class="flex flex-col md:flex-row gap-4">
+                      <!-- Quality Select -->
+                      <div class="flex flex-col">
+                        <label class="text-xs text-text-muted mb-1 uppercase tracking-wide">Download Quality Priority</label>
+                        <div class="flex flex-wrap gap-2">
+                          <label v-for="q in qualityOptions" :key="q" class="flex items-center gap-1 text-sm cursor-pointer text-text-secondary whitespace-nowrap">
+                            <input type="checkbox" :value="q" v-model="playlist.qualities" @change="saveConfig()" class="accent-accent bg-surface-elevated border-border-highlight rounded">
+                            {{ q === 'HI_RES_LOSSLESS' ? 'MAX' : q }}
+                          </label>
+                        </div>
+                      </div>
+                      
+                      <!-- Stream Quality Select -->
+                      <div class="flex flex-col">
+                        <label class="text-xs text-text-muted mb-1 uppercase tracking-wide">Stream Quality</label>
+                        <select v-model="streamQuality" class="bg-surface-elevated border border-border-highlight rounded text-sm text-text-primary px-2 py-0.5 outline-none focus:border-accent appearance-none">
+                            <option value="HI_RES_LOSSLESS">MAX</option>
+                            <option value="LOSSLESS">LOSSLESS</option>
+                            <option value="HIGH">HIGH</option>
+                            <option value="LOW">LOW</option>
+                        </select>
                       </div>
                     </div>
                     

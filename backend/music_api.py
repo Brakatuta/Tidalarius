@@ -159,17 +159,32 @@ def get_playlist_details(playlist_id: str, db: Session = Depends(get_db)):
     }
 
 @router.get("/stream/{track_id}")
-def stream_track_from_tidal(track_id: int):
+def stream_track_from_tidal(track_id: int, quality: str = "HIGH"):
     """Directly stream a track from Tidal if it's not downloaded."""
     try:
         from backend.tidal_auth import global_session
-        track = global_session.track(track_id)
-        stream = track.get_stream()
-        manifest = stream.get_stream_manifest()
-        urls = manifest.get_urls()
-        if urls:
-            return RedirectResponse(urls[0])
-        raise HTTPException(404, "No stream URL found from Tidal")
+        import tidalapi
+        
+        quality_map = {
+            "HI_RES_LOSSLESS": tidalapi.Quality.hi_res_lossless,
+            "LOSSLESS": tidalapi.Quality.high_lossless,
+            "HIGH": tidalapi.Quality.low_320k,
+            "LOW": tidalapi.Quality.low_96k,
+        }
+        requested_quality = quality_map.get(quality, tidalapi.Quality.low_320k)
+        
+        old_quality = global_session.config.quality
+        global_session.config.quality = requested_quality
+        
+        try:
+            track = global_session.track(track_id)
+            manifest = track.get_stream().get_stream_manifest()
+            urls = manifest.get_urls()
+            if urls:
+                return RedirectResponse(urls[0])
+            raise HTTPException(404, "No stream URL found from Tidal")
+        finally:
+            global_session.config.quality = old_quality
     except Exception as e:
         # Handle 401 token refresh just in case
         if "401" in str(e):
@@ -177,11 +192,16 @@ def stream_track_from_tidal(track_id: int):
             if getattr(global_session, "refresh_token", None) and global_session.token_refresh(global_session.refresh_token):
                 save_session(global_session)
                 try:
-                    track = global_session.track(track_id)
-                    manifest = track.get_stream().get_stream_manifest()
-                    urls = manifest.get_urls()
-                    if urls:
-                        return RedirectResponse(urls[0])
+                    old_quality = global_session.config.quality
+                    global_session.config.quality = requested_quality
+                    try:
+                        track = global_session.track(track_id)
+                        manifest = track.get_stream().get_stream_manifest()
+                        urls = manifest.get_urls()
+                        if urls:
+                            return RedirectResponse(urls[0])
+                    finally:
+                        global_session.config.quality = old_quality
                 except Exception as inner_e:
                     raise HTTPException(404, f"Track unavailable after refresh: {str(inner_e)}")
         raise HTTPException(404, f"Error getting stream from Tidal (likely unavailable): {str(e)}")
