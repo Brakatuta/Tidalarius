@@ -164,7 +164,8 @@ def stream_track_from_tidal(track_id: int):
         from backend.tidal_auth import global_session
         track = global_session.track(track_id)
         stream = track.get_stream()
-        urls = stream.get_urls()
+        manifest = stream.get_stream_manifest()
+        urls = manifest.get_urls()
         if urls:
             return RedirectResponse(urls[0])
         raise HTTPException(404, "No stream URL found from Tidal")
@@ -177,7 +178,8 @@ def stream_track_from_tidal(track_id: int):
                 try:
                     track = global_session.track(track_id)
                     stream = track.get_stream()
-                    urls = stream.get_urls()
+                    manifest = stream.get_stream_manifest()
+                    urls = manifest.get_urls()
                     if urls:
                         return RedirectResponse(urls[0])
                 except Exception as inner_e:
