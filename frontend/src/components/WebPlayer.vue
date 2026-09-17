@@ -10,7 +10,7 @@ const getQualityClasses = (quality) => {
         case 'HIGH': return 'bg-info-20 text-info-light border border-info-30'
         case 'LOSSLESS': return 'bg-warning-20 text-warning border border-warning-30'
         case 'HI_RES_LOSSLESS': return 'bg-purple-900/40 text-purple-400 border border-purple-500/50'
-        case 'OTHER': return 'bg-pink-900/40 text-pink-400 border border-pink-500/50'
+        case 'YOUTUBE': return 'bg-pink-900/40 text-pink-400 border border-pink-500/50'
         default: return 'bg-surface-elevated text-text-secondary border border-border-strong'
     }
 }

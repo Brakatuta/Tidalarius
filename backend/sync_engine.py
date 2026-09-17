@@ -267,9 +267,10 @@ def download_track_via_ytdlp(track, base_path):
             return False, "yt-dlp failed to produce output file", ""
             
         cover_data = download_cover(track)
-        write_metadata(final_file_path, track, cover_data, quality="OTHER")
+        write_metadata(final_file_path, track, cover_data, quality="YOUTUBE")
         
-        return True, f"Fallback Downloaded via YouTube (OTHER)", str(final_file_path)
+        file_size_mb = final_file_path.stat().st_size / (1024 * 1024)
+        return True, f"Downloaded {file_size_mb:.1f}MB (M4A) via YouTube", str(final_file_path)
     except Exception as e:
         return False, f"Fallback yt-dlp failed: {str(e)}", ""
 
