@@ -296,16 +296,7 @@ def download_track(track, quality, base_path):
             return False, f"Tidarr connection failed: {str(e)}", ""
     
     # Use tidalapi directly for downloading
-    success, msg, path = download_track_via_tidalapi(track, quality, base_path)
-    
-    # Fallback if Tidal fails (e.g. Geoblocked, Subscription limits)
-    if not success and "Already exists" not in msg:
-        print(f"[WORKER] Tidal download failed for '{track.name}': {msg}. Trying fallback via yt-dlp...", flush=True)
-        fallback_success, fallback_msg, fallback_path = download_track_via_ytdlp(track, base_path)
-        if fallback_success:
-            return True, fallback_msg, fallback_path
-            
-    return success, msg, path
+    return download_track_via_tidalapi(track, quality, base_path)
 
 
 def process_playlist_sync(playlist_id, qualities, track_id=None):
@@ -390,6 +381,18 @@ def process_playlist_sync(playlist_id, qualities, track_id=None):
                 else:
                     error_msg = msg
                     emit_sync_event("sync_log", playlist_id, message=f"FAILED: '{track.name}' in {quality} - Reason: {msg}")
+            
+            # Fallback if ALL requested qualities on Tidal failed
+            if not success and "Already exists" not in error_msg:
+                emit_sync_event("sync_log", playlist_id, message=f"[{idx+1}/{total_tracks}] All Tidal qualities failed for '{track.name}'. Trying fallback via yt-dlp...")
+                fallback_success, fallback_msg, fallback_path = download_track_via_ytdlp(track, playlist_dir)
+                if fallback_success:
+                    success = True
+                    used_quality = "YOUTUBE"
+                    emit_sync_event("sync_log", playlist_id, message=f"SUCCESS: Downloaded '{track.name}' (YOUTUBE) - {fallback_msg}")
+                else:
+                    error_msg = fallback_msg
+                    emit_sync_event("sync_log", playlist_id, message=f"FAILED: yt-dlp fallback for '{track.name}' - Reason: {fallback_msg}")
             
             if success:
                 # Add to M3U8
