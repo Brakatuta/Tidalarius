@@ -339,8 +339,8 @@ const fetchDetailsSilent = async () => {
                   </div>
                   
                   <!-- Sync Configuration inside Header -->
-                  <div class="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4 bg-surface-80 p-3 rounded-lg border border-border-highlight w-full backdrop-blur shadow-inner">
-                    <div class="flex flex-col md:flex-row gap-4">
+                  <div class="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4 flex-wrap bg-surface-80 p-3 rounded-lg border border-border-highlight w-full backdrop-blur shadow-inner">
+                    <div class="flex flex-col md:flex-row flex-wrap gap-4">
                       <!-- Quality Select -->
                       <div class="flex flex-col">
                         <label class="text-xs text-text-muted mb-1 uppercase tracking-wide">Download Quality Priority</label>
