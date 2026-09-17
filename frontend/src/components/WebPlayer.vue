@@ -87,6 +87,13 @@ const onEnded = () => {
     playerStore.next()
 }
 
+const onError = () => {
+    console.error("Audio playback error, skipping to next track")
+    setTimeout(() => {
+        if (playerStore.isPlaying) playerStore.next()
+    }, 1500)
+}
+
 const seek = (e) => {
     if (audioRef.value && duration.value) {
         const time = (e.target.value / 100) * duration.value
@@ -121,7 +128,7 @@ const formatTime = (seconds) => {
 <template>
   <div class="fixed bottom-0 left-0 right-0 h-20 md:h-24 bg-background border-t border-border-subtle shadow-[0_-10px_30px_rgba(0,0,0,0.5)] flex items-center justify-between px-2 md:px-4 z-50">
       
-      <audio ref="audioRef" @timeupdate="onTimeUpdate" @ended="onEnded" :volume="volume"></audio>
+      <audio ref="audioRef" @timeupdate="onTimeUpdate" @ended="onEnded" @error="onError" :volume="volume"></audio>
       
       <!-- Left: Track Info -->
       <div class="w-1/2 md:w-1/3 flex items-center gap-2 md:gap-4 truncate">

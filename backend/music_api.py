@@ -177,11 +177,10 @@ def stream_track_from_tidal(track_id: int):
                 save_session(global_session)
                 try:
                     track = global_session.track(track_id)
-                    stream = track.get_stream()
-                    manifest = stream.get_stream_manifest()
+                    manifest = track.get_stream().get_stream_manifest()
                     urls = manifest.get_urls()
                     if urls:
                         return RedirectResponse(urls[0])
                 except Exception as inner_e:
-                    raise HTTPException(500, f"Error after token refresh: {str(inner_e)}")
-        raise HTTPException(500, f"Error getting stream from Tidal: {str(e)}")
+                    raise HTTPException(404, f"Track unavailable after refresh: {str(inner_e)}")
+        raise HTTPException(404, f"Error getting stream from Tidal (likely unavailable): {str(e)}")
