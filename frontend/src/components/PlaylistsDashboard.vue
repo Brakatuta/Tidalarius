@@ -79,7 +79,7 @@ const deleteItem = async (playlist) => {
 
 const downloadTrack = async (playlist, quality = 'HIGH') => {
     try {
-        await fetch(`/api/sync/start/${playlist.tidal_id}`, {
+        await fetch(`/api/sync/start/${playlist.tidal_id}?item_type=${playlist.item_type || 'playlist'}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify([quality])

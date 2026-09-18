@@ -69,7 +69,8 @@ def get_downloaded_playlists(db: Session = Depends(get_db)):
 @router.get("/playlist/{playlist_id}")
 def get_playlist_details(playlist_id: str, db: Session = Depends(get_db)):
     """Returns the tracklist for a playlist, indicating which tracks are available locally."""
-    if not global_session.check_login():
+    from backend.tidal_auth import ensure_valid_session
+    if not ensure_valid_session():
         raise HTTPException(status_code=401, detail="Not authenticated with Tidal. Cannot fetch track metadata.")
         
     try:
@@ -92,48 +93,107 @@ def get_playlist_details(playlist_id: str, db: Session = Depends(get_db)):
             if len(batch) < limit:
                 break
                 
-        playlist_name = p.name
+        playlist_name = p.name or "Playlist"
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch playlist from Tidal: {str(e)}")
+        if "401" in str(e) and ensure_valid_session():
+            try:
+                p = global_session.playlist(playlist_id)
+                tracks = []
+                seen_ids = set()
+                offset = 0
+                limit = 1000
+                while True:
+                    batch = p.tracks(limit=limit, offset=offset)
+                    if not batch:
+                        break
+                    for t in batch:
+                        if t.id not in seen_ids:
+                            tracks.append(t)
+                            seen_ids.add(t.id)
+                    offset += len(batch)
+                    if len(batch) < limit:
+                        break
+                playlist_name = p.name or "Playlist"
+            except Exception as e2:
+                raise HTTPException(status_code=500, detail=f"Failed to fetch playlist from Tidal: {str(e2)}")
+        else:
+            raise HTTPException(status_code=500, detail=f"Failed to fetch playlist from Tidal: {str(e)}")
         
     config = db.query(models.PlaylistConfig).filter(models.PlaylistConfig.tidal_id == playlist_id).first()
     if config:
-        playlist_name = config.name
+        if config.name and config.name not in ["Unknown", "Unknown Item", "Unknown Playlist"]:
+            playlist_name = config.name
+        elif playlist_name and playlist_name not in ["Unknown", "Unknown Item", "Unknown Playlist"]:
+            # Auto-repair DB config if it had a placeholder name
+            config.name = playlist_name
+            db.commit()
         
+    # Detect playlist directory on disk robustly
+    candidate_names = []
+    if playlist_name: candidate_names.append(sanitize_filename(playlist_name))
+    if getattr(p, 'name', None): candidate_names.append(sanitize_filename(p.name))
+    if config and config.name: candidate_names.append(sanitize_filename(config.name))
+    
+    seen = set()
+    candidate_names = [c for c in candidate_names if c and not (c in seen or seen.add(c))]
+    
+    playlist_dir = None
     safe_name = sanitize_filename(playlist_name)
-    playlist_dir = os.path.join(MUSIC_DIR, safe_name)
+    
+    for cname in candidate_names:
+        cand_path = os.path.join(MUSIC_DIR, cname)
+        if os.path.exists(cand_path) and os.path.isdir(cand_path):
+            playlist_dir = cand_path
+            safe_name = cname
+            break
+            
+    if not playlist_dir and os.path.exists(MUSIC_DIR):
+        existing_dirs = {entry.name.lower(): entry.name for entry in os.scandir(MUSIC_DIR) if entry.is_dir()}
+        for cname in candidate_names:
+            if cname.lower() in existing_dirs:
+                real_name = existing_dirs[cname.lower()]
+                playlist_dir = os.path.join(MUSIC_DIR, real_name)
+                safe_name = real_name
+                break
+                
+    if not playlist_dir:
+        playlist_dir = os.path.join(MUSIC_DIR, safe_name)
         
-    local_files = []
+    # Collect all local files in playlist directory with relative paths for fast lookup & fuzzy matching
+    local_files_map = {}
     if os.path.exists(playlist_dir):
-        local_files = [f.name for f in os.scandir(playlist_dir) if f.is_file()]
+        for root, _, files in os.walk(playlist_dir):
+            for file in files:
+                rel_path = os.path.relpath(os.path.join(root, file), playlist_dir)
+                local_files_map[file.lower()] = rel_path
         
     result_tracks = []
     for idx, track in enumerate(tracks, start=1):
         track_num = track.track_num or 1
         artist_name = sanitize_filename(track.artist.name if track.artist else "Unknown Artist")
         album_name = sanitize_filename(track.album.name if track.album else "Unknown Album")
-        track_title = sanitize_filename(track.name)
+        safe_title = sanitize_filename(track.name)
         
-        expected_prefix = os.path.join(artist_name, album_name, f"{track_num:02d} - {track_title}")
+        expected_prefix = os.path.join(artist_name, album_name, f"{track_num:02d} - {safe_title}")
         
+        is_downloaded = False
         local_filename = None
-        quality_label = "Unknown"
+        quality_label = resolve_track_quality(track)
+        stream_url = f"/api/music/stream/{track.id}"
         
-        # Check possible extensions
-        for ext in [".flac", ".m4a"]:
+        # 1. Exact path check
+        for ext in [".flac", ".m4a", ".mp3", ".opus"]:
             rel_path = expected_prefix + ext
             full_path = os.path.join(playlist_dir, rel_path)
             if os.path.exists(full_path):
+                is_downloaded = True
                 local_filename = rel_path
-                # Default guess based on extension in case tag is missing
                 quality_label = "LOSSLESS" if ext == ".flac" else "HIGH"
                 
-                # Try to extract the true quality from mutagen tag
                 try:
                     import mutagen
                     audio = mutagen.File(full_path)
                     if audio is not None:
-                        # FLAC uses COMMENT, MP4 uses \xa9cmt
                         comments = audio.get("COMMENT", audio.get("\xa9cmt", []))
                         for c in comments:
                             if isinstance(c, str) and c.startswith("QUALITY="):
@@ -143,18 +203,35 @@ def get_playlist_details(playlist_id: str, db: Session = Depends(get_db)):
                     pass
                 break
                 
+        # 2. Fuzzy match fallback in case of tag discrepancies
+        if not is_downloaded:
+            for lf_lower, rel_path in local_files_map.items():
+                if safe_title.lower() in lf_lower:
+                    full_path = os.path.join(playlist_dir, rel_path)
+                    is_downloaded = True
+                    local_filename = rel_path
+                    quality_label = "LOSSLESS" if lf_lower.endswith(".flac") else "HIGH"
+                    
+                    try:
+                        import mutagen
+                        audio = mutagen.File(full_path)
+                        if audio is not None:
+                            comments = audio.get("COMMENT", audio.get("\xa9cmt", []))
+                            for c in comments:
+                                if isinstance(c, str) and c.startswith("QUALITY="):
+                                    quality_label = c.replace("QUALITY=", "").strip()
+                                    break
+                    except Exception:
+                        pass
+                    break
+                
         # Must url encode the filename and playlist name for the URL!
         import urllib.parse
         encoded_safe_name = urllib.parse.quote(safe_name)
         
-        stream_url = None
-        if local_filename:
-            # We must quote each part of the relative path separately to preserve the forward slashes
+        if is_downloaded and local_filename:
             encoded_local_filename = "/".join([urllib.parse.quote(p) for p in local_filename.replace('\\', '/').split('/')])
             stream_url = f"/music_files/{encoded_safe_name}/{encoded_local_filename}"
-        else:
-            quality_label = resolve_track_quality(track)
-            stream_url = f"/api/music/stream/{track.id}"
                 
         result_tracks.append({
             "id": track.id,
@@ -165,7 +242,7 @@ def get_playlist_details(playlist_id: str, db: Session = Depends(get_db)):
             "track_num": track_num,
             "playlist_pos": idx,
             "picture_url": track.album.image(320) if track.album and hasattr(track.album, 'image') and callable(track.album.image) else None,
-            "is_downloaded": local_filename is not None,
+            "is_downloaded": is_downloaded,
             "stream_url": stream_url,
             "quality": quality_label
         })

@@ -50,6 +50,21 @@ def save_session(session):
         return True
     return False
 
+def ensure_valid_session():
+    """Checks if the session is valid, and refreshes the token if expired."""
+    try:
+        if global_session.check_login():
+            return True
+        if getattr(global_session, "refresh_token", None):
+            print("[TIDAL_AUTH] Access token expired. Refreshing token...", flush=True)
+            if global_session.token_refresh(global_session.refresh_token):
+                save_session(global_session)
+                print("[TIDAL_AUTH] Token refreshed successfully.", flush=True)
+                return True
+    except Exception as e:
+        print(f"[TIDAL_AUTH] Token refresh failed: {e}", flush=True)
+    return False
+
 def wait_for_login(future):
     try:
         future.result() # This blocks until the user logs in or it times out
@@ -104,7 +119,7 @@ def get_device_login(background_tasks: BackgroundTasks):
 @router.get("/status")
 def check_status():
     return {
-        "logged_in": global_session.check_login(),
+        "logged_in": ensure_valid_session(),
         "is_logging_in": login_state["is_logging_in"],
         "error": login_state["error"]
     }

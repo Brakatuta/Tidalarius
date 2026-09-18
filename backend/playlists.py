@@ -106,19 +106,19 @@ def update_playlist_config(playlist_id: str, config: PlaylistConfigUpdate, db: S
         picture_url = config.picture_url
         item_type = config.item_type or "playlist"
         artist_name = config.artist_name
-        if not name or name == "Unknown":
+        if not name or name in ["Unknown", "Unknown Item", "Unknown Playlist"]:
             try:
                 p = global_session.playlist(playlist_id)
-                if p:
+                if p and p.name:
                     name = p.name
                     picture_url = p.image(320) if hasattr(p, 'image') and callable(p.image) else None
                     item_type = "playlist"
             except:
                 pass
-            if not name:
+            if not name or name in ["Unknown", "Unknown Item", "Unknown Playlist"]:
                 try:
                     a = global_session.album(playlist_id)
-                    if a:
+                    if a and a.name:
                         name = a.name
                         picture_url = a.image(320) if hasattr(a, 'image') and callable(a.image) else None
                         artist_name = a.artist.name if hasattr(a, 'artist') and a.artist else None
@@ -141,7 +141,17 @@ def update_playlist_config(playlist_id: str, config: PlaylistConfigUpdate, db: S
         db_config.sync_enabled = config.sync_enabled
         db_config.qualities = config.qualities
         db_config.schedule = config.schedule
-        if config.name: db_config.name = config.name
+        if config.name and config.name not in ["Unknown", "Unknown Item", "Unknown Playlist"]:
+            db_config.name = config.name
+        elif not db_config.name or db_config.name in ["Unknown", "Unknown Item", "Unknown Playlist"]:
+            try:
+                p = global_session.playlist(playlist_id)
+                if p and p.name: db_config.name = p.name
+            except:
+                try:
+                    a = global_session.album(playlist_id)
+                    if a and a.name: db_config.name = a.name
+                except: pass
         if config.artist_name: db_config.artist_name = config.artist_name
         if config.picture_url: db_config.picture_url = config.picture_url
         if config.item_type: db_config.item_type = config.item_type

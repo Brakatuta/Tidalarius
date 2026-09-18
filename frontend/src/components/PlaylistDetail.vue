@@ -415,9 +415,13 @@ const togglePlayPlaylist = () => {
 const saveConfig = async () => {
   saving.value = true
   try {
+    let nameToSave = playlistData.value?.name
+    if (!nameToSave || ['Unknown', 'Unknown Item', 'Unknown Playlist'].includes(nameToSave)) {
+      nameToSave = (props.playlist.name && !['Unknown', 'Unknown Item', 'Unknown Playlist'].includes(props.playlist.name)) ? props.playlist.name : undefined
+    }
     const payload = {
       item_type: props.playlist.item_type || 'playlist',
-      name: playlistData.value?.name || props.playlist.name,
+      name: nameToSave,
       artist_name: playlistData.value?.artist || props.playlist.artist_name || props.playlist.artist,
       picture_url: playlistData.value?.picture_url || props.playlist.picture_url,
       sync_enabled: !!props.playlist.sync_enabled,

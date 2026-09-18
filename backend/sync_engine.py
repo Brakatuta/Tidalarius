@@ -423,6 +423,16 @@ def process_playlist_sync(playlist_id, qualities, track_id=None):
                 if len(batch) < limit: break
             item_name = playlist.name
             
+        if db_config:
+            if item_name and (not db_config.name or db_config.name in ["Unknown", "Unknown Item", "Unknown Playlist"]):
+                db_config.name = item_name
+            if not db_config.picture_url:
+                try:
+                    db_config.picture_url = playlist.image(320) if hasattr(playlist, 'image') and callable(playlist.image) else None
+                except:
+                    pass
+            db.commit()
+            
         print(f"[WORKER] Found {len(tracks)} tracks total", flush=True)
         # Filter for single track sync if specified
         if track_id is not None:

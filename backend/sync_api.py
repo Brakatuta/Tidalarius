@@ -23,22 +23,51 @@ async def websocket_endpoint(websocket: WebSocket):
 
 @router.post("/start/{playlist_id}")
 async def start_sync(playlist_id: str, item_type: str = "playlist", qualities: Optional[List[str]] = Body(None), db: Session = Depends(get_db)):
+    from backend.tidal_auth import ensure_valid_session
+    ensure_valid_session()
+    
     config = db.query(models.PlaylistConfig).filter(models.PlaylistConfig.tidal_id == playlist_id).first()
+    real_name = None
+    real_pic = None
+    real_artist = None
+    try:
+        if item_type == "album":
+            p = sync_engine.global_session.album(playlist_id)
+            if p:
+                real_name = p.name
+                real_artist = getattr(p.artist, 'name', None) if getattr(p, 'artist', None) else None
+                real_pic = p.image(320) if hasattr(p, 'image') and callable(p.image) else None
+        elif item_type == "track":
+            p = sync_engine.global_session.track(playlist_id)
+            if p:
+                real_name = p.name
+                real_artist = getattr(p.artist, 'name', None) if getattr(p, 'artist', None) else None
+        else:
+            p = sync_engine.global_session.playlist(playlist_id)
+            if p:
+                real_name = p.name
+                real_pic = p.image(320) if hasattr(p, 'image') and callable(p.image) else None
+    except Exception as e:
+        print(f"[START_SYNC] Error fetching item metadata: {e}", flush=True)
+
     if not config:
-        name = "Unknown Item"
-        try:
-            if item_type == "album":
-                p = sync_engine.global_session.album(playlist_id)
-            elif item_type == "track":
-                p = sync_engine.global_session.track(playlist_id)
-            else:
-                p = sync_engine.global_session.playlist(playlist_id)
-            if p: name = p.name
-        except: pass
-        config = models.PlaylistConfig(tidal_id=playlist_id, item_type=item_type, name=name, qualities=["HIGH"])
+        config = models.PlaylistConfig(
+            tidal_id=playlist_id, 
+            item_type=item_type, 
+            name=real_name or "Unknown", 
+            artist_name=real_artist,
+            picture_url=real_pic,
+            qualities=["HIGH"]
+        )
         db.add(config)
         db.commit()
         db.refresh(config)
+    else:
+        if real_name and (not config.name or config.name in ["Unknown", "Unknown Item", "Unknown Playlist"]):
+            config.name = real_name
+            if real_pic and not config.picture_url: config.picture_url = real_pic
+            if real_artist and not config.artist_name: config.artist_name = real_artist
+            db.commit()
         
     dl_qualities = qualities if qualities else (config.qualities if config.qualities else ["HIGH"])
     
@@ -54,24 +83,48 @@ async def start_sync(playlist_id: str, item_type: str = "playlist", qualities: O
 
 @router.post("/track/{playlist_id}/{track_id}")
 async def start_single_track_sync(playlist_id: str, track_id: int, qualities: Optional[List[str]] = Body(None), db: Session = Depends(get_db)):
+    from backend.tidal_auth import ensure_valid_session
+    ensure_valid_session()
+    
     config = db.query(models.PlaylistConfig).filter(models.PlaylistConfig.tidal_id == playlist_id).first()
     item_type = "playlist"
-    if not config:
-        name = "Unknown Playlist"
-        try:
-            p = sync_engine.global_session.playlist(playlist_id)
-            if p: name = p.name
-        except: pass
+    real_name = None
+    real_pic = None
+    real_artist = None
+    try:
+        p = sync_engine.global_session.playlist(playlist_id)
+        if p: 
+            real_name = p.name
+            real_pic = p.image(320) if hasattr(p, 'image') and callable(p.image) else None
+    except: pass
+    if not real_name:
         try:
             a = sync_engine.global_session.album(playlist_id)
             if a:
-                name = a.name
+                real_name = a.name
+                real_artist = getattr(a.artist, 'name', None) if getattr(a, 'artist', None) else None
+                real_pic = a.image(320) if hasattr(a, 'image') and callable(a.image) else None
                 item_type = "album"
         except: pass
-        config = models.PlaylistConfig(tidal_id=playlist_id, name=name, item_type=item_type, qualities=["HIGH"])
+
+    if not config:
+        config = models.PlaylistConfig(
+            tidal_id=playlist_id, 
+            name=real_name or "Unknown", 
+            artist_name=real_artist,
+            picture_url=real_pic,
+            item_type=item_type, 
+            qualities=["HIGH"]
+        )
         db.add(config)
         db.commit()
         db.refresh(config)
+    else:
+        if real_name and (not config.name or config.name in ["Unknown", "Unknown Item", "Unknown Playlist"]):
+            config.name = real_name
+            if real_pic and not config.picture_url: config.picture_url = real_pic
+            if real_artist and not config.artist_name: config.artist_name = real_artist
+            db.commit()
     
     # Use provided qualities if given, otherwise fall back to config
     dl_qualities = qualities if qualities else (config.qualities if config.qualities else ["HIGH"])
