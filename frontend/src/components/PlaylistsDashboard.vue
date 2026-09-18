@@ -90,12 +90,59 @@ const downloadTrack = async (playlist, quality = 'HIGH') => {
     }
 }
 
+const CACHE_KEY_LIBRARY = 'tidalarius_cache_library_playlists'
+
+const safeSetCache = (key, value) => {
+    try {
+        localStorage.setItem(key, value)
+    } catch (e) {
+        if (e.name === 'QuotaExceededError' || e.code === 22) {
+            try {
+                const keysToRemove = []
+                for (let i = 0; i < localStorage.length; i++) {
+                    const k = localStorage.key(i)
+                    if (k && k.startsWith('tidalarius_cache_detail_')) {
+                        keysToRemove.push(k)
+                    }
+                }
+                keysToRemove.forEach(k => localStorage.removeItem(k))
+                localStorage.setItem(key, value)
+            } catch (err) {}
+        }
+    }
+}
+
 const fetchPlaylists = async () => {
-    loading.value = true
+    // 1. Instant Cache Render: load from local cache if available
+    const cached = localStorage.getItem(CACHE_KEY_LIBRARY)
+    if (cached) {
+        try {
+            const parsed = JSON.parse(cached)
+            if (Array.isArray(parsed) && parsed.length > 0) {
+                playlists.value = parsed
+                loading.value = false // render immediately without spinner!
+                
+                const urlParams = new URLSearchParams(window.location.search)
+                const playlistId = urlParams.get('playlist')
+                if (playlistId) {
+                    const p = playlists.value.find(x => x.tidal_id === playlistId)
+                    if (p) selectedPlaylist.value = p
+                }
+            }
+        } catch (e) {
+            console.warn("Failed to parse cached library", e)
+        }
+    } else if (!playlists.value.length) {
+        loading.value = true
+    }
+
+    // 2. Revalidate in background from server
     try {
         const res = await fetch('/api/playlists/')
         if (res.ok) {
-            playlists.value = await res.json()
+            const data = await res.json()
+            playlists.value = data
+            safeSetCache(CACHE_KEY_LIBRARY, JSON.stringify(data))
             
             // Check URL parameters for direct playlist navigation
             const urlParams = new URLSearchParams(window.location.search)

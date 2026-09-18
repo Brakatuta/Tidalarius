@@ -9,6 +9,7 @@ import models
 from tidal_auth import global_session
 import sync_engine
 from ws_manager import manager
+from music_api import get_cached_image_url, invalidate_metadata_cache
 
 router = APIRouter()
 
@@ -63,9 +64,12 @@ def get_playlists(db: Session = Depends(get_db)):
             merged["name"] = p.name
             merged["is_remote"] = True
             try:
-                merged["picture_url"] = p.image(320) if hasattr(p, 'image') and callable(p.image) else None
+                raw_pic = p.image(320) if hasattr(p, 'image') and callable(p.image) else None
+                if raw_pic:
+                    merged["picture_url"] = raw_pic
             except:
                 pass
+            merged["picture_url"] = get_cached_image_url(merged.get("picture_url"))
             result.append(merged)
         else:
             pic_url = None
@@ -78,7 +82,7 @@ def get_playlists(db: Session = Depends(get_db)):
                 "item_type": "playlist",
                 "name": p.name,
                 "artist_name": None,
-                "picture_url": pic_url,
+                "picture_url": get_cached_image_url(pic_url),
                 "sync_enabled": False,
                 "qualities": [],
                 "schedule": None,
@@ -90,7 +94,9 @@ def get_playlists(db: Session = Depends(get_db)):
     # Add any local items (albums, tracks, or deleted remote playlists) that weren't in remote_playlists
     for config in local_configs:
         if config.tidal_id not in seen_ids:
-            result.append(config.to_dict())
+            item_dict = config.to_dict()
+            item_dict["picture_url"] = get_cached_image_url(item_dict.get("picture_url"))
+            result.append(item_dict)
 
     return result
 
@@ -157,6 +163,7 @@ def update_playlist_config(playlist_id: str, config: PlaylistConfigUpdate, db: S
         if config.item_type: db_config.item_type = config.item_type
         
     db.commit()
+    invalidate_metadata_cache(playlist_id)
     manager.broadcast_sync({
         "type": "library_updated",
         "playlist_id": playlist_id,
@@ -174,6 +181,7 @@ def delete_playlist_config(playlist_id: str, db: Session = Depends(get_db)):
         name = db_config.name
         db.delete(db_config)
         db.commit()
+        invalidate_metadata_cache(playlist_id)
         manager.broadcast_sync({
             "type": "library_updated",
             "playlist_id": playlist_id,

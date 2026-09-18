@@ -7,6 +7,7 @@ import sync_engine
 from database import get_db, SessionLocal
 import models
 import os
+from music_api import invalidate_metadata_cache
 
 router = APIRouter()
 
@@ -237,6 +238,7 @@ def delete_downloads(playlist_id: str, db: Session = Depends(get_db)):
     config.last_synced = None
     config.sync_status = "idle"
     db.commit()
+    invalidate_metadata_cache(playlist_id)
     
     manager.broadcast_sync({"type": "playlist_downloads_deleted", "playlist_id": playlist_id})
     manager.broadcast_sync({"type": "track_deleted", "playlist_id": playlist_id, "track_id": playlist_id})
@@ -423,6 +425,8 @@ def delete_single_track(playlist_id: str, track_id: int, db: Session = Depends(g
         config.last_synced = None
         config.sync_status = "idle"
         db.commit()
+
+    invalidate_metadata_cache(playlist_id)
 
     if deleted:
         manager.broadcast_sync({"type": "track_deleted", "playlist_id": playlist_id, "track_id": track_id})

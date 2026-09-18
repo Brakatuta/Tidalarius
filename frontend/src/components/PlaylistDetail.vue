@@ -162,6 +162,31 @@ const saveScheduleModal = async () => {
 
 const isInLibrary = ref(false)
 
+const getDetailCacheKey = () => {
+    const id = props.playlist.tidal_id || props.playlist.id
+    return `tidalarius_cache_detail_${props.playlist.item_type || 'playlist'}_${id}`
+}
+
+const safeSetCache = (key, value) => {
+    try {
+        localStorage.setItem(key, value)
+    } catch (e) {
+        if (e.name === 'QuotaExceededError' || e.code === 22) {
+            try {
+                const keysToRemove = []
+                for (let i = 0; i < localStorage.length; i++) {
+                    const k = localStorage.key(i)
+                    if (k && k.startsWith('tidalarius_cache_detail_')) {
+                        keysToRemove.push(k)
+                    }
+                }
+                keysToRemove.forEach(k => localStorage.removeItem(k))
+                localStorage.setItem(key, value)
+            } catch (err) {}
+        }
+    }
+}
+
 const checkLibrary = async () => {
     try {
         const res = await fetch('/api/playlists/')
@@ -192,6 +217,9 @@ const addToLibrary = async () => {
         })
         if (res.ok) {
             isInLibrary.value = true
+            if (playlistData.value) {
+                safeSetCache(getDetailCacheKey(), JSON.stringify(playlistData.value))
+            }
         }
     } catch (e) {
         console.error("Failed to add to library", e)
@@ -205,6 +233,7 @@ const removeFromLibrary = async () => {
         const res = await fetch(`/api/playlists/${props.playlist.tidal_id}`, { method: 'DELETE' })
         if (res.ok) {
             isInLibrary.value = false
+            localStorage.removeItem(getDetailCacheKey())
             fetchDetailsSilent()
         }
     } catch (e) {
@@ -217,7 +246,7 @@ const deleteDownloads = async () => {
     try {
         const res = await fetch(`/api/sync/delete/${props.playlist.tidal_id}`, { method: 'DELETE' })
         if (res.ok) {
-            // refresh data
+            localStorage.removeItem(getDetailCacheKey())
             fetchDetailsSilent()
         }
     } catch (e) {
@@ -314,21 +343,50 @@ const applyStreamQuality = () => {
 }
 
 const fetchDetails = async () => {
-    loading.value = true
     error.value = null
+    
+    // Stale-While-Revalidate: For library mode (!isDiscover), render cached details instantly!
+    if (!props.isDiscover) {
+        const cached = localStorage.getItem(getDetailCacheKey())
+        if (cached) {
+            try {
+                const parsed = JSON.parse(cached)
+                if (parsed && Array.isArray(parsed.tracks) && parsed.tracks.length > 0) {
+                    playlistData.value = parsed
+                    applyStreamQuality()
+                    loading.value = false // Instant display with 0ms delay!
+                }
+            } catch (e) {
+                console.warn("Failed to parse cached details", e)
+            }
+        }
+    }
+
+    if (!playlistData.value) {
+        loading.value = true
+    }
+
     try {
         const endpoint = props.playlist.item_type === 'album' ? `/api/music/album/${props.playlist.tidal_id}` : `/api/music/playlist/${props.playlist.tidal_id}`
         const res = await fetch(endpoint)
         if (res.ok) {
-            playlistData.value = await res.json()
+            const data = await res.json()
+            playlistData.value = data
             applyStreamQuality()
             syncStore.fetchStatus(props.playlist.tidal_id)
+            if (!props.isDiscover) {
+                safeSetCache(getDetailCacheKey(), JSON.stringify(data))
+            }
         } else {
             const data = await res.json()
-            error.value = data.detail || 'Failed to load playlist details'
+            if (!playlistData.value) {
+                error.value = data.detail || 'Failed to load playlist details'
+            }
         }
     } catch (e) {
-        error.value = "Failed to fetch playlist details"
+        if (!playlistData.value) {
+            error.value = "Failed to fetch playlist details"
+        }
         console.error(e)
     } finally {
         loading.value = false
@@ -486,9 +544,13 @@ const fetchDetailsSilent = async () => {
         const endpoint = props.playlist.item_type === 'album' ? `/api/music/album/${props.playlist.tidal_id}` : `/api/music/playlist/${props.playlist.tidal_id}`
         const res = await fetch(endpoint)
         if (res.ok) {
-            playlistData.value = await res.json()
+            const data = await res.json()
+            playlistData.value = data
             applyStreamQuality()
             syncStore.fetchStatus(props.playlist.tidal_id)
+            if (!props.isDiscover) {
+                safeSetCache(getDetailCacheKey(), JSON.stringify(data))
+            }
         }
     } catch (e) {
         // ignore
