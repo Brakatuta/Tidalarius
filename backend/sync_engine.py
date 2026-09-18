@@ -176,10 +176,10 @@ def download_track_via_tidalapi(track, quality_str, base_path):
         track_dir.mkdir(parents=True, exist_ok=True)
         file_prefix = f"{track_num:02d} - {track_title}"
         
-        for ext in [".flac", ".m4a"]:
-            check_path = track_dir / f"{file_prefix}{ext}"
-            if check_path.exists() and check_path.stat().st_size > 100_000:
-                return True, f"Already exists ({check_path.stat().st_size} bytes)", str(check_path)
+        expected_ext = ".flac" if "LOSSLESS" in quality_str else ".m4a"
+        check_path = track_dir / f"{file_prefix}{expected_ext}"
+        if check_path.exists() and check_path.stat().st_size > 100_000:
+            return True, f"Already exists ({check_path.stat().st_size} bytes)", str(check_path)
 
         # Map our quality strings to tidalapi Quality enum
         import tidalapi
@@ -476,7 +476,19 @@ def process_playlist_sync(playlist_id, qualities, track_id=None):
                 if ok:
                     success = True
                     used_quality = quality
-                    emit_sync_event("sync_log", playlist_id, message=f"SUCCESS: Downloaded '{track.name}' ({quality}) - {msg}")
+                    if "Already exists" in msg and out:
+                        try:
+                            import mutagen
+                            audio = mutagen.File(out)
+                            if audio:
+                                comments = audio.get("COMMENT", audio.get("\xa9cmt", []))
+                                for c in comments:
+                                    if isinstance(c, str) and c.startswith("QUALITY="):
+                                        used_quality = c.replace("QUALITY=", "").strip()
+                                        break
+                        except Exception:
+                            pass
+                    emit_sync_event("sync_log", playlist_id, message=f"SUCCESS: Downloaded '{track.name}' ({used_quality}) - {msg}")
                     break
                 else:
                     error_msg = msg
@@ -523,6 +535,8 @@ def process_playlist_sync(playlist_id, qualities, track_id=None):
         # Generate Report
         db_config.sync_status = "idle"
         db_config.last_synced = datetime.datetime.utcnow()
+        if db_config.item_type == "track" and success and used_quality:
+            db_config.qualities = [used_quality]
         db.commit()
         
         report_path = os.path.join(playlist_dir, f"sync_report_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
@@ -537,7 +551,7 @@ def process_playlist_sync(playlist_id, qualities, track_id=None):
             for t in report["failed"]: f.write(f" - {t['track']} (Reason: {t['reason']})\n")
             
         prune_sync_reports(playlist_dir, max_keep=3)
-        emit_sync_event("sync_finished", playlist_id, report_url=f"/api/sync/report?path={report_path}")
+        emit_sync_event("sync_finished", playlist_id, report_url=f"/api/sync/report?path={report_path}", quality=used_quality if item_type == "track" else None)
         manager.broadcast_sync({"type": "library_updated", "playlist_id": playlist_id, "action": "sync_finished"})
     except Exception as e:
         print(f"[{get_log_timestamp()}] Sync failed for {playlist_id}: {e}", flush=True)

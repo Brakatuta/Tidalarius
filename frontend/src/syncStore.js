@@ -37,6 +37,9 @@ export const syncStore = reactive({
         this.syncState[pid].status = 'idle'
         this.syncState[pid].last_synced = new Date().toISOString()
         this.syncState[pid].report_url = data.report_url
+        if (data.quality) {
+          this.syncState[pid].quality = data.quality
+        }
         this.syncLogs[pid].push("SYNC FINISHED.")
       } else if (data.type === 'sync_error') {
         this.syncState[pid].status = 'error'
@@ -119,6 +122,9 @@ export const syncStore = reactive({
             if (!this.syncState[playlist_id]) this.syncState[playlist_id] = {}
             this.syncState[playlist_id].status = data.status
             this.syncState[playlist_id].progress = data.progress
+            if (data.quality) {
+                this.syncState[playlist_id].quality = data.quality
+            }
             this.syncLogs[playlist_id] = data.logs || []
         }
     } catch (e) {

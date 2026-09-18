@@ -39,9 +39,11 @@ watch(() => syncStore.lastDownloadedTrack, (newTrack) => {
         const p = playlists.value.find(item => item.tidal_id === newTrack.playlist_id)
         if (p) {
             p.last_synced = new Date().toISOString()
+            p.qualities = [newTrack.quality]
             if (!syncStore.syncState[p.tidal_id]) syncStore.syncState[p.tidal_id] = {}
             syncStore.syncState[p.tidal_id].last_synced = new Date().toISOString()
             syncStore.syncState[p.tidal_id].quality = newTrack.quality
+            safeSetCache(CACHE_KEY_LIBRARY, JSON.stringify(playlists.value))
         }
     }
 })
@@ -196,20 +198,44 @@ onMounted(() => {
 })
 
 
+const formatQuality = (quality) => {
+    if (!quality) return 'HIGH'
+    if (quality === 'HI_RES_LOSSLESS') return 'MAX'
+    return quality
+}
+
+const getQualityClasses = (quality) => {
+    const normalized = (quality === 'HI_RES_LOSSLESS') ? 'MAX' : quality
+    switch (normalized) {
+        case 'LOW': return 'bg-green-900/40 text-green-400 border border-green-700/50'
+        case 'HIGH': return 'bg-info-20 text-info-light border border-info-30'
+        case 'LOSSLESS': return 'bg-warning-20 text-warning border border-warning-30'
+        case 'MAX': return 'bg-purple-900/40 text-purple-400 border border-purple-500/50'
+        case 'YOUTUBE': return 'bg-pink-900/40 text-pink-400 border border-pink-500/50'
+        default: return 'bg-surface-elevated text-text-secondary border border-border-strong'
+    }
+}
+
+const getTrackQuality = (playlist) => {
+    return syncStore.syncState[playlist.tidal_id]?.quality || playlist.qualities?.[0] || 'HIGH'
+}
+
 const playTrack = (track) => {
     if (playerStore.currentPlaylistId === `track_${track.tidal_id}`) {
         playerStore.togglePlayPause()
         return
     }
+    const isDownloaded = !!(syncStore.syncState[track.tidal_id]?.last_synced || track.last_synced)
+    const trackQuality = getTrackQuality(track)
     const streamQuality = localStorage.getItem('streamQuality') || 'HIGH'
     const trackToPlay = {
         id: track.tidal_id,
         title: track.name,
         artist: track.artist_name || 'Unknown',
         picture_url: track.picture_url,
-        is_downloaded: false,
-        quality: streamQuality,
-        stream_url: `/api/music/stream/${track.tidal_id}?quality=${streamQuality}`
+        is_downloaded: isDownloaded,
+        quality: isDownloaded ? trackQuality : streamQuality,
+        stream_url: `/api/music/stream/${track.tidal_id}?quality=${isDownloaded ? trackQuality : streamQuality}`
     }
     playerStore.playPlaylist(`track_${track.tidal_id}`, "Library Track", [trackToPlay], 0)
 }
@@ -284,9 +310,9 @@ const confirmDownloadTrack = (quality) => {
                                     <span class="text-[8px] uppercase tracking-wider text-accent">Syncing</span>
                                 </button>
                                 
-                                <div v-if="playlist.item_type === 'track' && syncStore.syncState[playlist.tidal_id]?.status !== 'syncing' && syncStore.syncState[playlist.tidal_id]?.status !== 'queued' && (syncStore.syncState[playlist.tidal_id]?.last_synced || playlist.last_synced)" class="flex items-center gap-1">
-                                    <span class="text-[10px] font-bold text-accent px-1.5 py-0.5 rounded bg-accent-dark-20 border border-accent-dark-50">
-                                        {{ (syncStore.syncState[playlist.tidal_id]?.quality === 'HI_RES_LOSSLESS' ? 'MAX' : syncStore.syncState[playlist.tidal_id]?.quality) || (playlist.qualities?.[0] === 'HI_RES_LOSSLESS' ? 'MAX' : playlist.qualities?.[0]) || 'HIGH' }}
+                                <div v-if="playlist.item_type === 'track' && syncStore.syncState[playlist.tidal_id]?.status !== 'syncing' && syncStore.syncState[playlist.tidal_id]?.status !== 'queued' && (syncStore.syncState[playlist.tidal_id]?.last_synced || playlist.last_synced)" class="flex items-center gap-1.5">
+                                    <span class="text-[10px] font-bold px-1.5 py-0.5 rounded shadow-sm transition-colors" :class="getQualityClasses(getTrackQuality(playlist))">
+                                        {{ formatQuality(getTrackQuality(playlist)) }}
                                     </span>
                                     <button @click.stop="confirmDeleteTrackDownload(playlist)" class="text-accent hover:text-danger hover:scale-110 transition-transform flex flex-col items-center gap-0.5 group/btn" title="Downloaded (Click to delete file)">
                                         <svg class="w-4 h-4 shrink-0 drop-shadow-md" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 00-9.78 2.096A4.001 4.001 0 003 15z"/></svg>

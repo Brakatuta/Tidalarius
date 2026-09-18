@@ -43,6 +43,7 @@ async def start_sync(playlist_id: str, item_type: str = "playlist", qualities: O
             if p:
                 real_name = p.name
                 real_artist = getattr(p.artist, 'name', None) if getattr(p, 'artist', None) else None
+                real_pic = p.album.image(320) if hasattr(p, 'album') and hasattr(p.album, 'image') and callable(p.album.image) else None
         else:
             p = sync_engine.global_session.playlist(playlist_id)
             if p:
@@ -51,6 +52,8 @@ async def start_sync(playlist_id: str, item_type: str = "playlist", qualities: O
     except Exception as e:
         print(f"[START_SYNC] Error fetching item metadata: {e}", flush=True)
 
+    dl_qualities = qualities if qualities else (config.qualities if config and config.qualities else ["HIGH"])
+
     if not config:
         config = models.PlaylistConfig(
             tidal_id=playlist_id, 
@@ -58,20 +61,22 @@ async def start_sync(playlist_id: str, item_type: str = "playlist", qualities: O
             name=real_name or "Unknown", 
             artist_name=real_artist,
             picture_url=real_pic,
-            qualities=["HIGH"]
+            qualities=dl_qualities
         )
         db.add(config)
         db.commit()
         db.refresh(config)
     else:
+        if qualities:
+            config.qualities = qualities
         if real_name and (not config.name or config.name in ["Unknown", "Unknown Item", "Unknown Playlist"]):
             config.name = real_name
-            if real_pic and not config.picture_url: config.picture_url = real_pic
-            if real_artist and not config.artist_name: config.artist_name = real_artist
-            db.commit()
+        if real_pic and not config.picture_url:
+            config.picture_url = real_pic
+        if real_artist and not config.artist_name:
+            config.artist_name = real_artist
+        db.commit()
         
-    dl_qualities = qualities if qualities else (config.qualities if config.qualities else ["HIGH"])
-    
     # check if already running
     if sync_engine.active_jobs.get(playlist_id) in ["running", "paused"]:
         return {"status": "already running"}
@@ -160,17 +165,20 @@ async def cancel_sync(playlist_id: str):
     return {"status": "not running"}
 
 @router.get("/status/{playlist_id}")
-def get_sync_status(playlist_id: str):
+def get_sync_status(playlist_id: str, db: Session = Depends(get_db)):
     job_status = sync_engine.active_jobs.get(playlist_id, "idle")
     if job_status == "running":
         job_status = "syncing"
         
     logs = sync_engine.active_logs.get(playlist_id, [])
     progress = sync_engine.active_progress.get(playlist_id, 0)
+    config = db.query(models.PlaylistConfig).filter(models.PlaylistConfig.tidal_id == playlist_id).first()
+    quality = config.qualities[0] if config and config.qualities else None
     return {
         "status": job_status,
         "logs": logs,
-        "progress": progress
+        "progress": progress,
+        "quality": quality
     }
 
 @router.get("/report")

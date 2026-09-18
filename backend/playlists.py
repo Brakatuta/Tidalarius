@@ -4,6 +4,7 @@ from typing import List, Dict, Any
 from pydantic import BaseModel
 
 import os
+import datetime
 from database import get_db
 import models
 from tidal_auth import global_session
@@ -37,19 +38,47 @@ def get_playlists(db: Session = Depends(get_db)):
     # 2. Fetch local configs & verify disk existence for synced items
     local_configs = db.query(models.PlaylistConfig).all()
     for config in local_configs:
-        if config.last_synced:
+        if config.last_synced or config.item_type == "track":
             safe_name = sync_engine.sanitize_filename(config.name) if config.name else ""
             target_dir = os.path.join(sync_engine.MUSIC_DIR, safe_name) if safe_name else ""
             has_files = False
+            detected_quality = None
             if target_dir and os.path.exists(target_dir):
                 for root, _, files in os.walk(target_dir):
-                    if any(f.lower().endswith(('.flac', '.m4a', '.mp3', '.opus')) for f in files):
-                        has_files = True
+                    for f in files:
+                        if f.lower().endswith(('.flac', '.m4a', '.mp3', '.opus')):
+                            has_files = True
+                            full_path = os.path.join(root, f)
+                            try:
+                                import mutagen
+                                audio = mutagen.File(full_path)
+                                if audio:
+                                    comments = audio.get("COMMENT", audio.get("\xa9cmt", []))
+                                    for c in comments:
+                                        if isinstance(c, str) and c.startswith("QUALITY="):
+                                            detected_quality = c.replace("QUALITY=", "").strip()
+                                            break
+                            except Exception:
+                                pass
+                            if not detected_quality:
+                                detected_quality = "LOSSLESS" if f.lower().endswith('.flac') else "HIGH"
+                            break
+                    if has_files:
                         break
             if not has_files:
                 config.last_synced = None
                 config.sync_status = "idle"
                 db.commit()
+            elif config.item_type == "track":
+                changed = False
+                if not config.last_synced:
+                    config.last_synced = datetime.datetime.utcnow()
+                    changed = True
+                if detected_quality and config.qualities != [detected_quality]:
+                    config.qualities = [detected_quality]
+                    changed = True
+                if changed:
+                    db.commit()
 
     local_dict = {config.tidal_id: config.to_dict() for config in local_configs}
 
