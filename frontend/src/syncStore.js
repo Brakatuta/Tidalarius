@@ -5,6 +5,8 @@ export const syncStore = reactive({
   syncLogs: {},  // track logs per playlist
   lastDownloadedTrack: null,
   trackDeleted: null,
+  playlistDownloadsDeleted: null,
+  lastLibraryUpdate: null,
   ws: null,
   
   connect() {
@@ -41,7 +43,7 @@ export const syncStore = reactive({
         this.syncState[pid].error = data.error
         this.syncLogs[pid].push(`ERROR: ${data.error}`)
       } else if (data.type === 'track_downloaded') {
-        this.lastDownloadedTrack = { playlist_id: pid, track_name: data.track_name, quality: data.quality, timestamp: Date.now() }
+        this.lastDownloadedTrack = { playlist_id: pid, track_id: data.track_id, track_name: data.track_name, quality: data.quality, timestamp: Date.now() }
         if (!this.syncState[pid]) this.syncState[pid] = {}
         this.syncState[pid].last_synced = new Date().toISOString()
         this.syncState[pid].quality = data.quality
@@ -51,6 +53,16 @@ export const syncStore = reactive({
           this.syncState[pid].last_synced = null
           delete this.syncState[pid].last_synced
         }
+      } else if (data.type === 'playlist_downloads_deleted') {
+        this.playlistDownloadsDeleted = { playlist_id: pid, timestamp: Date.now() }
+        if (this.syncState[pid]) {
+          this.syncState[pid].last_synced = null
+          delete this.syncState[pid].last_synced
+        }
+        window.dispatchEvent(new CustomEvent('library-updated', { detail: data }))
+      } else if (data.type === 'library_updated') {
+        this.lastLibraryUpdate = { timestamp: Date.now(), data }
+        window.dispatchEvent(new CustomEvent('library-updated', { detail: data }))
       }
     }
     

@@ -92,6 +92,7 @@ const playTrack = (track) => {
         duration: track.duration,
         picture_url: track.picture_url,
         is_downloaded: false,
+        quality: streamQuality,
         stream_url: `/api/music/stream/${track.tidal_id}?quality=${streamQuality}`
     }
     

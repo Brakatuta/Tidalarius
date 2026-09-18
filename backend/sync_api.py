@@ -185,7 +185,9 @@ def delete_downloads(playlist_id: str, db: Session = Depends(get_db)):
     config.sync_status = "idle"
     db.commit()
     
+    manager.broadcast_sync({"type": "playlist_downloads_deleted", "playlist_id": playlist_id})
     manager.broadcast_sync({"type": "track_deleted", "playlist_id": playlist_id, "track_id": playlist_id})
+    manager.broadcast_sync({"type": "library_updated", "playlist_id": playlist_id, "action": "downloads_deleted"})
     return {"status": "success", "message": "Deleted downloaded files" if deleted_any else "No files to delete"}
 
 def cleanup_artist_folder_if_empty(deleted_file_path: str, playlist_dir: str):

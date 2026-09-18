@@ -15,7 +15,26 @@ def sanitize_filename(name):
     # Same implementation as in sync_engine.py
     return re.sub(r'[\\/*?:"<>|]', "", name)
 
-@router.get("/playlists")
+def resolve_track_quality(tidal_track) -> str:
+    raw_q = getattr(tidal_track, 'audio_quality', None)
+    if not raw_q:
+        tags = getattr(tidal_track, 'media_metadata_tags', None)
+        if tags and isinstance(tags, list) and len(tags) > 0:
+            raw_q = tags[0]
+    
+    if raw_q:
+        q_upper = str(raw_q).upper()
+        if "HI_RES" in q_upper or "MAX" in q_upper:
+            return "HI_RES_LOSSLESS"
+        elif "LOSSLESS" in q_upper:
+            return "LOSSLESS"
+        elif "HIGH" in q_upper:
+            return "HIGH"
+        elif "LOW" in q_upper:
+            return "LOW"
+    return "HIGH"
+
+@router.get("/downloaded")
 def get_downloaded_playlists(db: Session = Depends(get_db)):
     """Returns a list of playlists that actually exist in the local music directory."""
     if not os.path.exists(MUSIC_DIR):
@@ -134,7 +153,7 @@ def get_playlist_details(playlist_id: str, db: Session = Depends(get_db)):
             encoded_local_filename = "/".join([urllib.parse.quote(p) for p in local_filename.replace('\\', '/').split('/')])
             stream_url = f"/music_files/{encoded_safe_name}/{encoded_local_filename}"
         else:
-            quality_label = "TIDAL"
+            quality_label = resolve_track_quality(track)
             stream_url = f"/api/music/stream/{track.id}"
                 
         result_tracks.append({
@@ -354,7 +373,7 @@ def get_album_details(album_id: str, db: Session = Depends(get_db)):
             
             is_downloaded = False
             local_filename = None
-            quality_label = "TIDAL"
+            quality_label = resolve_track_quality(t)
             stream_url = f"/api/music/stream/{t.id}"
             
             # Check by expected path pattern first (like playlists do)

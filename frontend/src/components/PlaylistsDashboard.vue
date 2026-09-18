@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { playerStore } from '../playerStore.js'
 import { syncStore } from '../syncStore.js'
 import PlaylistDetail from './PlaylistDetail.vue'
@@ -56,6 +56,13 @@ watch(() => syncStore.trackDeleted, (delEvent) => {
             syncStore.syncState[delEvent.playlist_id].last_synced = null
             delete syncStore.syncState[delEvent.playlist_id].last_synced
         }
+        fetchPlaylists()
+    }
+})
+
+watch(() => syncStore.playlistDownloadsDeleted, (delEvent) => {
+    if (delEvent) {
+        fetchPlaylists()
     }
 })
 
@@ -130,6 +137,15 @@ onMounted(() => {
     window.addEventListener('navigate-home', () => {
         selectedPlaylist.value = null
     })
+
+    const onLibraryUpdated = () => {
+        fetchPlaylists()
+    }
+    window.addEventListener('library-updated', onLibraryUpdated)
+
+    onUnmounted(() => {
+        window.removeEventListener('library-updated', onLibraryUpdated)
+    })
 })
 
 
@@ -145,6 +161,7 @@ const playTrack = (track) => {
         artist: track.artist_name || 'Unknown',
         picture_url: track.picture_url,
         is_downloaded: false,
+        quality: streamQuality,
         stream_url: `/api/music/stream/${track.tidal_id}?quality=${streamQuality}`
     }
     playerStore.playPlaylist(`track_${track.tidal_id}`, "Library Track", [trackToPlay], 0)

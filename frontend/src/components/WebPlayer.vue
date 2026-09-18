@@ -1,14 +1,26 @@
 <script setup>
-import { ref, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { playerStore } from '../playerStore.js'
+import MarqueeText from './MarqueeText.vue'
 
 const audioRef = ref(null)
+
+const displayQuality = computed(() => {
+    if (!playerStore.currentTrack) return ''
+    const q = playerStore.currentTrack.quality
+    if (q && q !== 'TIDAL') {
+        return q === 'HI_RES_LOSSLESS' ? 'MAX' : q
+    }
+    const streamQ = localStorage.getItem('streamQuality') || 'HIGH'
+    return streamQ === 'HI_RES_LOSSLESS' ? 'MAX' : streamQ
+})
 
 const getQualityClasses = (quality) => {
     switch (quality) {
         case 'LOW': return 'bg-green-900/40 text-green-400 border border-green-700/50'
         case 'HIGH': return 'bg-info-20 text-info-light border border-info-30'
         case 'LOSSLESS': return 'bg-warning-20 text-warning border border-warning-30'
+        case 'MAX':
         case 'HI_RES_LOSSLESS': return 'bg-purple-900/40 text-purple-400 border border-purple-500/50'
         case 'YOUTUBE': return 'bg-pink-900/40 text-pink-400 border border-pink-500/50'
         default: return 'bg-surface-elevated text-text-secondary border border-border-strong'
@@ -138,8 +150,6 @@ const seek = (e) => {
     }
 }
 
-import { computed } from 'vue'
-
 const progressStyle = computed(() => {
     const percent = duration.value ? (currentTime.value / duration.value) * 100 : 0
     return {
@@ -177,11 +187,11 @@ const formatTime = (seconds) => {
               <div class="flex flex-col truncate max-w-full">
                   <div class="flex items-center mb-0.5">
                       <span class="px-1.5 py-0.5 rounded text-[8px] md:text-[10px] font-mono font-bold tracking-wider leading-none" 
-                          :class="getQualityClasses(playerStore.currentTrack.quality)">
-                          {{ playerStore.currentTrack.quality === 'HI_RES_LOSSLESS' ? 'MAX' : playerStore.currentTrack.quality }}
+                          :class="getQualityClasses(displayQuality)">
+                          {{ displayQuality }}
                       </span>
                   </div>
-                  <span class="text-text-primary font-medium text-sm md:text-base hover:underline cursor-pointer truncate">{{ playerStore.currentTrack.title }}</span>
+                  <MarqueeText :text="playerStore.currentTrack.title" class="text-text-primary font-medium text-sm md:text-base hover:underline cursor-pointer" />
                   <span class="text-xs text-text-muted hover:underline cursor-pointer truncate">{{ playerStore.currentTrack.artist }}</span>
               </div>
           </template>

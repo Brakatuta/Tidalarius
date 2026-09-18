@@ -24,15 +24,24 @@ active_jobs = {}
 active_logs = {}
 active_progress = {}
 
+def get_log_timestamp():
+    now = datetime.datetime.now()
+    return f"{now.strftime('%Y:%m:%d:%H:%M:%S')}:{now.microsecond // 1000:03d}"
+
 def emit_sync_event(event_type, playlist_id, **kwargs):
     event = {"type": event_type, "playlist_id": playlist_id}
     event.update(kwargs)
     
     if event_type == "sync_log":
         msg = kwargs.get("message", "")
+        ts = get_log_timestamp()
+        formatted_msg = f"[{ts}] {msg}"
+        kwargs["message"] = formatted_msg
+        event["message"] = formatted_msg
         if playlist_id not in active_logs:
             active_logs[playlist_id] = []
-        active_logs[playlist_id].append(msg)
+        active_logs[playlist_id].append(formatted_msg)
+        print(formatted_msg, flush=True)
     elif event_type == "sync_progress":
         active_progress[playlist_id] = kwargs.get("progress", 0)
         
@@ -490,7 +499,7 @@ def process_playlist_sync(playlist_id, qualities, track_id=None):
                 else:
                     report["fallback"].append({"track": track.name, "wanted": sorted_qualities[0], "got": used_quality})
                     
-                emit_sync_event("track_downloaded", playlist_id, track_name=track.name,                     quality=used_quality)
+                emit_sync_event("track_downloaded", playlist_id, track_id=track.id, track_name=track.name, quality=used_quality)
             else:
                 report["failed"].append({"track": track.name, "reason": error_msg})
                 
@@ -508,7 +517,7 @@ def process_playlist_sync(playlist_id, qualities, track_id=None):
         
         report_path = os.path.join(playlist_dir, f"sync_report_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
         with open(report_path, "w", encoding="utf-8") as f:
-            f.write(f"Sync Report for {playlist.name}\n")
+            f.write(f"Sync Report for {playlist.name} [{get_log_timestamp()}]\n")
             f.write("="*30 + "\n\n")
             f.write(f"Success ({len(report['success'])}):\n")
             for t in report["success"]: f.write(f" - {t}\n")
@@ -519,8 +528,9 @@ def process_playlist_sync(playlist_id, qualities, track_id=None):
             
         prune_sync_reports(playlist_dir, max_keep=3)
         emit_sync_event("sync_finished", playlist_id, report_url=f"/api/sync/report?path={report_path}")
+        manager.broadcast_sync({"type": "library_updated", "playlist_id": playlist_id, "action": "sync_finished"})
     except Exception as e:
-        print(f"Sync failed for {playlist_id}: {e}")
+        print(f"[{get_log_timestamp()}] Sync failed for {playlist_id}: {e}", flush=True)
         import traceback
         traceback.print_exc()
         db_config.sync_status = "error"
@@ -531,50 +541,53 @@ def process_playlist_sync(playlist_id, qualities, track_id=None):
         db.close()
 
 def sync_worker():
-    print("[WORKER] Thread started, waiting for jobs", flush=True)
+    print(f"[{get_log_timestamp()}] [WORKER] Thread started, waiting for jobs", flush=True)
     prune_all_sync_reports(MUSIC_DIR, max_keep=3)
     while True:
         job = sync_queue.get()
         if job is None: break
-        print(f"[WORKER] Picked up job from queue: {job}", flush=True)
+        print(f"[{get_log_timestamp()}] [WORKER] Picked up job from queue: {job}", flush=True)
         try:
             process_playlist_sync(job["playlist_id"], job["qualities"], job.get("track_id"))
         except Exception as e:
-            print(f"[WORKER] Exception in process_playlist_sync: {e}", flush=True)
+            print(f"[{get_log_timestamp()}] [WORKER] Exception in process_playlist_sync: {e}", flush=True)
         finally:
-            print("[WORKER] Job finished, calling task_done", flush=True)
+            print(f"[{get_log_timestamp()}] [WORKER] Job finished, calling task_done", flush=True)
             sync_queue.task_done()
 
 def scheduler_worker():
     import croniter
-    print("[SCHEDULER] Thread started", flush=True)
+    print(f"[{get_log_timestamp()}] [SCHEDULER] Thread started", flush=True)
+    last_checked_minute = None
     while True:
-        now = datetime.datetime.now()
-        # Sleep until the start of the next minute
-        sleep_seconds = 60 - now.second
-        time.sleep(sleep_seconds)
-        
-        now = datetime.datetime.now()
         try:
+            time.sleep(5)
+            now = datetime.datetime.now()
+            current_minute = (now.year, now.month, now.day, now.hour, now.minute)
+            if current_minute == last_checked_minute:
+                continue
+            last_checked_minute = current_minute
+            
+            check_time = now.replace(second=0, microsecond=0)
             db = SessionLocal()
-            configs = db.query(models.PlaylistConfig).filter(models.PlaylistConfig.sync_enabled == True).all()
-            for config in configs:
-                if config.schedule and config.schedule != "custom":
-                    try:
-                        cron = croniter.croniter(config.schedule, now - datetime.timedelta(minutes=1))
-                        next_run = cron.get_next(datetime.datetime)
-                        if now >= next_run and now < next_run + datetime.timedelta(minutes=1):
-                            if active_jobs.get(config.tidal_id) not in ["running", "paused"]:
-                                print(f"[SCHEDULER] Triggering scheduled sync for {config.name}", flush=True)
-                                sync_queue.put({
-                                    "playlist_id": config.tidal_id,
-                                    "qualities": config.qualities if config.qualities else ["HIGH"]
-                                })
-                    except Exception as e:
-                        print(f"[SCHEDULER] Invalid cron expression '{config.schedule}' for {config.tidal_id}: {e}", flush=True)
-            db.close()
+            try:
+                configs = db.query(models.PlaylistConfig).filter(models.PlaylistConfig.sync_enabled == True).all()
+                for config in configs:
+                    if config.schedule and config.schedule != "custom":
+                        try:
+                            if croniter.croniter.match(config.schedule, check_time):
+                                if active_jobs.get(config.tidal_id) not in ["running", "paused"]:
+                                    print(f"[{get_log_timestamp()}] [SCHEDULER] Triggering scheduled sync for {config.name}", flush=True)
+                                    sync_queue.put({
+                                        "playlist_id": config.tidal_id,
+                                        "qualities": config.qualities if config.qualities else ["HIGH"]
+                                    })
+                        except Exception as e:
+                            print(f"[{get_log_timestamp()}] [SCHEDULER] Invalid cron expression '{config.schedule}' for {config.tidal_id}: {e}", flush=True)
+            finally:
+                db.close()
         except Exception as e:
-            print(f"[SCHEDULER] Error: {e}", flush=True)
+            print(f"[{get_log_timestamp()}] [SCHEDULER] Error: {e}", flush=True)
 
 worker_thread = threading.Thread(target=sync_worker, daemon=True)
 worker_thread.start()

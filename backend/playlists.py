@@ -8,6 +8,7 @@ from database import get_db
 import models
 from tidal_auth import global_session
 import sync_engine
+from ws_manager import manager
 
 router = APIRouter()
 
@@ -101,12 +102,36 @@ def update_playlist_config(playlist_id: str, config: PlaylistConfigUpdate, db: S
     db_config = db.query(models.PlaylistConfig).filter(models.PlaylistConfig.tidal_id == playlist_id).first()
     
     if not db_config:
+        name = config.name
+        picture_url = config.picture_url
+        item_type = config.item_type or "playlist"
+        artist_name = config.artist_name
+        if not name or name == "Unknown":
+            try:
+                p = global_session.playlist(playlist_id)
+                if p:
+                    name = p.name
+                    picture_url = p.image(320) if hasattr(p, 'image') and callable(p.image) else None
+                    item_type = "playlist"
+            except:
+                pass
+            if not name:
+                try:
+                    a = global_session.album(playlist_id)
+                    if a:
+                        name = a.name
+                        picture_url = a.image(320) if hasattr(a, 'image') and callable(a.image) else None
+                        artist_name = a.artist.name if hasattr(a, 'artist') and a.artist else None
+                        item_type = "album"
+                except:
+                    pass
+
         db_config = models.PlaylistConfig(
             tidal_id=playlist_id,
-            item_type=config.item_type,
-            name=config.name or "Unknown",
-            artist_name=config.artist_name,
-            picture_url=config.picture_url,
+            item_type=item_type,
+            name=name or "Unknown",
+            artist_name=artist_name,
+            picture_url=picture_url,
             sync_enabled=config.sync_enabled,
             qualities=config.qualities,
             schedule=config.schedule
@@ -116,15 +141,35 @@ def update_playlist_config(playlist_id: str, config: PlaylistConfigUpdate, db: S
         db_config.sync_enabled = config.sync_enabled
         db_config.qualities = config.qualities
         db_config.schedule = config.schedule
+        if config.name: db_config.name = config.name
+        if config.artist_name: db_config.artist_name = config.artist_name
+        if config.picture_url: db_config.picture_url = config.picture_url
+        if config.item_type: db_config.item_type = config.item_type
         
     db.commit()
+    manager.broadcast_sync({
+        "type": "library_updated",
+        "playlist_id": playlist_id,
+        "action": "saved",
+        "item_type": db_config.item_type,
+        "name": db_config.name
+    })
     return {"status": "success"}
 
 @router.delete("/{playlist_id}")
 def delete_playlist_config(playlist_id: str, db: Session = Depends(get_db)):
     db_config = db.query(models.PlaylistConfig).filter(models.PlaylistConfig.tidal_id == playlist_id).first()
     if db_config:
+        item_type = db_config.item_type
+        name = db_config.name
         db.delete(db_config)
         db.commit()
+        manager.broadcast_sync({
+            "type": "library_updated",
+            "playlist_id": playlist_id,
+            "action": "deleted",
+            "item_type": item_type,
+            "name": name
+        })
         return {"status": "success"}
     raise HTTPException(status_code=404, detail="Item not found in library")
