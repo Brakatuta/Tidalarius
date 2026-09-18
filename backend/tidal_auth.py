@@ -5,6 +5,46 @@ import json
 
 router = APIRouter()
 
+# Patch tidalapi.album.Album.__init__ to gracefully handle CloudFront 429 rate-limiting
+# on api.tidal.com/v1/albums/{id} by falling back to api.tidal.com/v1/albums/{id}/tracks
+_original_album_init = tidalapi.album.Album.__init__
+
+def _resilient_album_init(self, session, album_id):
+    self.session = session
+    self.request = session.request
+    self.artist = session.artist()
+    self.id = str(album_id) if album_id is not None else None
+
+    if self.id:
+        try:
+            request = self.request.request("GET", "albums/%s" % self.id)
+            self.request.map_json(request.json(), parse=self.parse)
+        except Exception as e:
+            try:
+                req_tracks = self.request.request("GET", f"albums/{self.id}/tracks")
+                tracks_data = req_tracks.json()
+                items = tracks_data.get("items", [])
+                if items:
+                    alb_json = items[0].get("album", {})
+                    art_json = items[0].get("artist", {})
+                    arts_json = items[0].get("artists", [art_json] if art_json else [])
+                    fallback_json = {
+                        "id": self.id,
+                        "title": alb_json.get("title", "Unknown Album"),
+                        "cover": alb_json.get("cover"),
+                        "videoCover": alb_json.get("videoCover"),
+                        "artist": art_json,
+                        "artists": arts_json,
+                        "numberOfTracks": tracks_data.get("totalNumberOfItems", len(items))
+                    }
+                    self.parse(fallback_json)
+                else:
+                    raise e
+            except Exception:
+                raise e
+
+tidalapi.album.Album.__init__ = _resilient_album_init
+
 CONFIG_DIR = os.environ.get("CONFIG_DIR", "./config")
 SESSION_FILE = os.path.join(CONFIG_DIR, "tidal_session.json")
 

@@ -587,7 +587,65 @@ def get_album_details(album_id: str, db: Session = Depends(get_db)):
                 except Exception as e:
                     print(f"[CACHE] Error writing album metadata cache {album_id}: {e}", flush=True)
         except Exception as e:
-            raise HTTPException(status_code=404, detail=f"Album not found: {str(e)}")
+            print(f"[ALBUM] Standard album fetch failed ({e}), attempting resilient /tracks fallback...", flush=True)
+            try:
+                from tidal_auth import ensure_valid_session
+                ensure_valid_session()
+                req = global_session.request.request("GET", f"albums/{album_id}/tracks")
+                tracks_data = req.json()
+                items = tracks_data.get("items", [])
+                if not items:
+                    raise HTTPException(status_code=404, detail=f"Album not found: {str(e)}")
+                
+                alb_meta = items[0].get("album", {})
+                art_meta = items[0].get("artist", {})
+                album_name = alb_meta.get("title") or "Unknown Album"
+                artist_name = art_meta.get("name") or "Unknown Artist"
+                cover_uuid = alb_meta.get("cover")
+                album_picture = f"https://resources.tidal.com/images/{cover_uuid.replace('-', '/')}/640x640.jpg" if cover_uuid else None
+                
+                raw_tracks = []
+                for idx, item in enumerate(items, start=1):
+                    t_track_num = item.get("trackNumber") or idx
+                    t_cover = item.get("album", {}).get("cover") or cover_uuid
+                    t_pic = f"https://resources.tidal.com/images/{t_cover.replace('-', '/')}/320x320.jpg" if t_cover else None
+                    
+                    q_raw = item.get("audioQuality", "HIGH")
+                    q_label = "HIGH"
+                    if "HI_RES" in str(q_raw).upper() or "MAX" in str(q_raw).upper():
+                        q_label = "HI_RES_LOSSLESS"
+                    elif "LOSSLESS" in str(q_raw).upper():
+                        q_label = "LOSSLESS"
+                    elif "LOW" in str(q_raw).upper():
+                        q_label = "LOW"
+                        
+                    raw_tracks.append({
+                        "id": item.get("id"),
+                        "title": item.get("title"),
+                        "artist": item.get("artist", {}).get("name") or artist_name,
+                        "album": item.get("album", {}).get("title") or album_name,
+                        "duration": item.get("duration") or 0,
+                        "track_num": t_track_num,
+                        "playlist_pos": t_track_num,
+                        "picture_url": t_pic,
+                        "quality": q_label
+                    })
+                    
+                if config:
+                    try:
+                        temp_path = f"{meta_cache_path}.tmp"
+                        with open(temp_path, "w", encoding="utf-8") as f:
+                            json.dump({
+                                "name": album_name,
+                                "artist_name": artist_name,
+                                "picture_url": album_picture,
+                                "tracks": raw_tracks
+                            }, f)
+                        os.replace(temp_path, meta_cache_path)
+                    except Exception as ce:
+                        print(f"[CACHE] Error writing album metadata cache {album_id}: {ce}", flush=True)
+            except Exception as fallback_e:
+                raise HTTPException(status_code=404, detail=f"Album not found: {str(fallback_e)}")
 
     safe_album_name = sanitize_filename(album_name)
     album_dir = os.path.join(MUSIC_DIR, safe_album_name)
