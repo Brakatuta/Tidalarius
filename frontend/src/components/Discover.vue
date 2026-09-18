@@ -147,7 +147,7 @@ const addToLibrary = async (item, event) => {
                         <div class="flex items-center gap-3">
                             <h3 class="text-xl font-bold text-text-secondary">Albums</h3>
                             <span v-if="totals.albums" class="text-xs font-semibold px-2 py-0.5 rounded-full bg-surface-elevated text-text-muted border border-border-strong">
-                                {{ totals.albums }} {{ totals.albums === 1 ? 'Album' : 'Alben' }}
+                                {{ totals.albums }} {{ totals.albums === 1 ? 'Album' : 'Albums' }}
                             </span>
                         </div>
                         <div v-if="totalPages('albums') > 1" class="flex items-center gap-2">

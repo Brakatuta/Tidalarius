@@ -36,13 +36,13 @@ const onQualityChanged = () => {
 }
 
 const weekDays = [
-  { id: 1, label: 'Mo' },
-  { id: 2, label: 'Di' },
-  { id: 3, label: 'Mi' },
-  { id: 4, label: 'Do' },
-  { id: 5, label: 'Fr' },
-  { id: 6, label: 'Sa' },
-  { id: 0, label: 'So' }
+  { id: 1, label: 'Mon' },
+  { id: 2, label: 'Tue' },
+  { id: 3, label: 'Wed' },
+  { id: 4, label: 'Thu' },
+  { id: 5, label: 'Fri' },
+  { id: 6, label: 'Sat' },
+  { id: 0, label: 'Sun' }
 ]
 
 const modalSyncEnabled = ref(false)
@@ -75,24 +75,24 @@ const selectWeekend = () => {
 
 const scheduleSummary = computed(() => {
   if (!modalSyncEnabled.value) {
-    return 'Auto-Sync ist deaktiviert'
+    return 'Auto-sync is disabled'
   }
   if (scheduleMode.value === 'interval') {
-    return `Synchronisiert alle ${scheduleInterval.value} Stunde${scheduleInterval.value > 1 ? 'n' : ''}`
+    return `Syncs every ${scheduleInterval.value} hour${scheduleInterval.value > 1 ? 's' : ''}`
   }
   const timeStr = scheduleTime.value || '03:00'
   if (scheduleDays.value.length === 7) {
-    return `Täglich um ${timeStr} Uhr`
+    return `Daily at ${timeStr}`
   }
   const daySet = new Set(scheduleDays.value)
   if (daySet.size === 5 && [1, 2, 3, 4, 5].every(d => daySet.has(d))) {
-    return `Montag bis Freitag um ${timeStr} Uhr`
+    return `Monday to Friday at ${timeStr}`
   }
   if (daySet.size === 2 && daySet.has(6) && daySet.has(0)) {
-    return `Am Wochenende (Sa, So) um ${timeStr} Uhr`
+    return `On weekends (Sat, Sun) at ${timeStr}`
   }
   const dayNames = weekDays.filter(d => daySet.has(d.id)).map(d => d.label).join(', ')
-  return `Jeden ${dayNames} um ${timeStr} Uhr`
+  return `Every ${dayNames} at ${timeStr}`
 })
 
 const openScheduleModal = () => {
@@ -664,7 +664,7 @@ const fetchDetailsSilent = async () => {
                     </div>
                     
                     <div class="flex items-center gap-2 ml-auto">
-                      <!-- 1. Delete (Mülleimer) -->
+                      <!-- 1. Delete (Trash) -->
                       <button @click="deleteModalOpen = true" 
                               :disabled="getSyncStatus.status !== 'idle'" 
                               class="bg-danger hover:bg-danger-light text-text-primary border border-danger-30 text-xs px-2.5 py-1.5 rounded font-bold transition disabled:opacity-50 flex items-center justify-center" 
@@ -694,7 +694,7 @@ const fetchDetailsSilent = async () => {
                         Sync Now
                       </button>
 
-                      <!-- 4. Sync Settings (Zahnrad) -->
+                      <!-- 4. Sync Settings (Cog) -->
                       <button @click="openScheduleModal()" 
                               class="p-1.5 bg-surface hover:bg-surface-elevated border border-border-strong rounded text-text-secondary hover:text-text-primary transition-colors flex items-center justify-center"
                               title="Sync Settings">
@@ -886,7 +886,7 @@ const fetchDetailsSilent = async () => {
             <div v-if="scheduleMode === 'time'" class="space-y-4">
               <!-- Sync Time -->
               <div>
-                <label class="block text-xs text-text-muted uppercase tracking-wider mb-1.5">Sync Time (Uhrzeit)</label>
+                <label class="block text-xs text-text-muted uppercase tracking-wider mb-1.5">Sync Time</label>
                 <input type="time" v-model="scheduleTime" 
                        class="w-full bg-background border border-border-strong rounded-lg px-3 py-2 text-text-primary text-sm focus:outline-none focus:border-accent">
               </div>
@@ -894,13 +894,13 @@ const fetchDetailsSilent = async () => {
               <!-- Weekdays -->
               <div>
                 <div class="flex items-center justify-between mb-1.5">
-                  <label class="text-xs text-text-muted uppercase tracking-wider">Days of Week (Wochentage)</label>
+                  <label class="text-xs text-text-muted uppercase tracking-wider">Days of Week</label>
                   <div class="flex gap-1">
                     <button type="button" @click="selectAllDays" class="text-[10px] text-accent hover:underline cursor-pointer">All</button>
                     <span class="text-text-disabled text-[10px]">•</span>
-                    <button type="button" @click="selectWeekdays" class="text-[10px] text-accent hover:underline cursor-pointer">Mo–Fr</button>
+                    <button type="button" @click="selectWeekdays" class="text-[10px] text-accent hover:underline cursor-pointer">Mon–Fri</button>
                     <span class="text-text-disabled text-[10px]">•</span>
-                    <button type="button" @click="selectWeekend" class="text-[10px] text-accent hover:underline cursor-pointer">Sa–So</button>
+                    <button type="button" @click="selectWeekend" class="text-[10px] text-accent hover:underline cursor-pointer">Sat–Sun</button>
                   </div>
                 </div>
                 
